@@ -1,6 +1,6 @@
 extern crate std;
 use crate::pal::{Buzzer, Delay, Error, Keypad, Screen};
-use std::vec::Vec;
+use std::{vec, vec::Vec};
 
 macro_rules! chip {
     (@make $peri: expr) => {{
@@ -64,8 +64,8 @@ impl ScreenCommand {
 
 #[derive(Debug, Clone, Default)]
 pub struct MockScreen {
-    commands: Vec<ScreenCommand>,
-    collision: bool,
+    pub commands: Vec<ScreenCommand>,
+    pub collision: bool,
 }
 
 impl MockScreen {
@@ -95,7 +95,7 @@ impl Screen for MockScreen {
 
 #[derive(Debug, Clone, Default)]
 pub struct MockKeypad {
-    sequence: Vec<Option<u8>>,
+    pub sequence: Vec<Option<u8>>,
 }
 
 impl MockKeypad {
@@ -119,7 +119,7 @@ impl Keypad for MockKeypad {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MockBuzzer {
-    state: Option<bool>,
+    pub state: Option<bool>,
 }
 
 impl Buzzer for MockBuzzer {
@@ -156,11 +156,11 @@ mod test_mocks {
 
         assert_eq!(
             screen.commands,
-            Vec::from([
+            vec![
                 ScreenCommand::xor(1, 1, &[1, 2, 3]),
                 ScreenCommand::Clear,
                 ScreenCommand::xor(2, 2, &[2, 3, 4]),
-            ]),
+            ],
         );
 
         assert_eq!(screen.collision, false);
@@ -177,7 +177,7 @@ mod test_mocks {
         assert_eq!(keypad.key_is_pressed().unwrap(), false);
         assert_eq!(keypad.read_key(&mut delay).unwrap(), None);
 
-        keypad.set_sequence(Vec::from([Some(1), Some(2), None, Some(3)]));
+        keypad.set_sequence(vec![Some(1), Some(2), None, Some(3)]);
 
         assert_eq!(keypad.key_is_pressed().unwrap(), true);
         assert_eq!(keypad.read_key(&mut delay).unwrap(), Some(1));

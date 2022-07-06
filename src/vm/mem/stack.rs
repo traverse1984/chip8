@@ -14,12 +14,12 @@ impl Stack {
         }
     }
 
-    pub fn push(&mut self, frame: u16) -> Result<u16> {
+    pub fn push(&mut self, frame: u16) -> Result {
         match self.sp {
             0..=14 | 0xFF => {
                 self.sp = self.sp.overflowing_add(1).0;
                 self.frames[self.sp as usize] = frame;
-                Ok(frame)
+                Ok(())
             }
             15 => Err(Error::StackOverflow { frame }),
             _ => unreachable!(),

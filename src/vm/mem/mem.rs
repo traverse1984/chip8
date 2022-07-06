@@ -2,7 +2,7 @@ use super::{Ram, Registers, Stack};
 
 pub type Result<T = ()> = core::result::Result<T, Error>;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Error {
     InvalidAddress { addr: u16 },
     InvalidSlice { addr: u16, len: u8 },
@@ -10,6 +10,7 @@ pub enum Error {
     InvalidRegister { reg: u8 },
     NotWritable { addr: u16 },
     NotAligned { pc: u16 },
+    LoadTooLong { addr: usize, len: usize },
     StackOverflow { frame: u16 },
     StackEmpty,
 }

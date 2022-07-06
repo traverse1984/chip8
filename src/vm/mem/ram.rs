@@ -27,6 +27,19 @@ impl Ram {
         addr < 0x1000
     }
 
+    pub fn load(&mut self, addr: usize, bytes: &[u8]) -> Result {
+        if bytes.len() <= 4096 - addr {
+            let target = &mut self.mem[addr..addr + bytes.len()];
+            target.copy_from_slice(&bytes);
+            Ok(())
+        } else {
+            Err(Error::LoadTooLong {
+                addr,
+                len: bytes.len(),
+            })
+        }
+    }
+
     pub fn to_valid_address(&self, addr: u16) -> Result<u16> {
         if Self::is_address(addr) {
             Ok(addr)
@@ -90,7 +103,28 @@ impl Default for Ram {
 }
 
 mod tests {
+    use super::Error;
     use super::Ram;
+
+    #[test]
+    fn load() {
+        let mut ram = Ram::new();
+
+        ram.load(0x100, &[1, 2, 3]).unwrap();
+        assert_eq!(ram.read_bytes(0x100, 3).unwrap(), &[1, 2, 3]);
+
+        ram.load(0x200, &[4, 5, 6]).unwrap();
+        assert_eq!(ram.read_bytes(0x200, 3).unwrap(), &[4, 5, 6]);
+
+        let too_long = [0; 1024];
+        assert_eq!(
+            ram.load(0xF00, &too_long).unwrap_err(),
+            Error::LoadTooLong {
+                addr: 0xF00,
+                len: 1024
+            }
+        )
+    }
 
     #[test]
     fn sprite_placement() {

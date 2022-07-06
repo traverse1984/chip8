@@ -1,4 +1,5 @@
 use super::mem::{Ram, Registers, Stack, State, V_FLAG};
+use super::program::Program;
 use super::status::{Error, Status};
 use crate::pal::{Buzzer, Delay, Keypad, Screen};
 
@@ -38,8 +39,18 @@ where
     D: Delay,
 {
     pub const KEYPAD_POLL_FREQUENCY: u32 = 1000;
+    pub const INSTRUCTION_SIZE: u16 = 2;
 
-    fn execute(&mut self, instruction: u16) -> Status {
+    fn load<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Result<(), ()> {
+        self.ram.load(0x200, program.into().as_bytes()).unwrap();
+        Ok(())
+    }
+
+    fn step(&mut self) -> Status {
+        Ok(())
+    }
+
+    fn exec(&mut self, instruction: u16) -> Status {
         let cmd = instruction >> 12;
         let nnn = instruction & 0x0FFF;
         let byte = nnn as u8; // Lossy
@@ -68,14 +79,15 @@ where
 
             // CALL addr
             2 => {
-                self.stack.push(nnn).map(|addr| self.pc = addr)?;
+                self.stack.push(self.pc)?;
+                self.pc = nnn;
                 Ok(())
             }
 
             // SE Vx, byte
             3 => {
                 if self.reg.get(vx)? == byte {
-                    self.pc += 4;
+                    self.pc += Self::INSTRUCTION_SIZE;
                 }
                 Ok(())
             }
@@ -83,7 +95,7 @@ where
             // SNE Vx, byte
             4 => {
                 if self.reg.get(vx)? != byte {
-                    self.pc += 4;
+                    self.pc += Self::INSTRUCTION_SIZE;
                 }
                 Ok(())
             }
@@ -91,7 +103,7 @@ where
             // // SE Vx, Vy, 0
             5 if nibble == 0 => {
                 if self.reg.get(vx)? == self.reg.get(vy)? {
-                    self.pc += 4;
+                    self.pc += Self::INSTRUCTION_SIZE;
                 }
                 Ok(())
             }
@@ -174,7 +186,7 @@ where
             // // SNE
             9 if nibble == 0 => {
                 if self.reg.get(vx)? != self.reg.get(vy)? {
-                    self.pc += 4;
+                    self.pc += Self::INSTRUCTION_SIZE;
                 }
                 Ok(())
             }
@@ -212,7 +224,7 @@ where
                     .read_key(&mut self.delay)
                     .map_err(|e| e.into())?
                 {
-                    Some(key) if key == self.reg.get(vx)? => self.pc += 4,
+                    Some(key) if key == self.reg.get(vx)? => self.pc += Self::INSTRUCTION_SIZE,
                     _ => (),
                 }
                 Ok(())
@@ -225,7 +237,7 @@ where
                     .read_key(&mut self.delay)
                     .map_err(|e| e.into())?
                 {
-                    Some(key) if key != self.reg.get(vx)? => self.pc += 4,
+                    Some(key) if key != self.reg.get(vx)? => self.pc += Self::INSTRUCTION_SIZE,
                     _ => (),
                 }
 
@@ -362,7 +374,7 @@ where
         }
     }
 
-    pub fn free(self) -> (S, K, B, D, State) {
+    pub fn state(&self) -> State {
         let Chip8 {
             i,
             pc,
@@ -371,13 +383,10 @@ where
             reg,
             stack,
             ram,
-            screen,
-            keypad,
-            buzzer,
-            delay,
-        } = self;
+            ..
+        } = *self;
 
-        let state = State {
+        State {
             i,
             pc,
             dt,
@@ -385,7 +394,19 @@ where
             reg,
             stack,
             ram,
-        };
+        }
+    }
+
+    pub fn free(self) -> (S, K, B, D, State) {
+        let state = self.state();
+
+        let Chip8 {
+            screen,
+            keypad,
+            buzzer,
+            delay,
+            ..
+        } = self;
 
         (screen, keypad, buzzer, delay, state)
     }
@@ -393,10 +414,47 @@ where
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+    use std::vec;
+
     use super::{super::chip, *};
+    use crate::vm::mocks::ScreenCommand;
+
+    macro_rules! exec {
+        ($($inst: expr),+ $(; $($tail: tt)*)?) => {{
+            let mut chip = chip!( $($($tail)*)? );
+            $(chip.exec($inst).unwrap();)+
+            chip
+        }};
+    }
 
     #[test]
-    fn test() {
-        let chip = chip!();
+    fn cls() {
+        let (screen, ..) = exec!(0x00E0).free();
+        assert_eq!(screen.commands, vec![ScreenCommand::Clear])
     }
+
+    #[test]
+    fn jp() {
+        let mut chip = chip!();
+
+        chip.exec(0x1123).unwrap();
+        assert_eq!(chip.state().pc, 0x0123);
+
+        chip.exec(0x1456).unwrap();
+        assert_eq!(chip.state().pc, 0x0456);
+    }
+
+    #[test]
+    fn call() {
+        let mut chip = chip!();
+        chip.pc = 0x0123;
+        chip.exec(0x2456).unwrap();
+
+        assert_eq!(chip.pc, 0x0456);
+        assert_eq!(chip.state().stack.pop().unwrap(), 0x0123);
+    }
+
+    #[test]
+    fn se_3xkk() {}
 }
