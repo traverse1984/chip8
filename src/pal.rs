@@ -1,5 +1,5 @@
 /// General peripheral error, indicates only which component failed.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     Screen,
     Keypad,

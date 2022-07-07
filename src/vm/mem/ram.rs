@@ -27,9 +27,12 @@ impl Ram {
         addr < 0x1000
     }
 
-    pub fn load(&mut self, addr: usize, bytes: &[u8]) -> Result {
-        if bytes.len() <= 4096 - addr {
-            let target = &mut self.mem[addr..addr + bytes.len()];
+    pub fn load(&mut self, addr: u16, bytes: &[u8]) -> Result {
+        let addr = self.to_valid_address(addr)?;
+        let index = addr as usize;
+
+        if bytes.len() <= 4096 - index {
+            let target = &mut self.mem[index..index + bytes.len()];
             target.copy_from_slice(&bytes);
             Ok(())
         } else {
@@ -46,16 +49,6 @@ impl Ram {
         } else {
             Err(Error::InvalidAddress { addr })
         }
-    }
-
-    pub fn to_pc_aligned(&self, addr: u16) -> Result<u16> {
-        self.to_valid_address(addr).and_then(|pc| {
-            if pc % 2 == 0 {
-                Ok(pc)
-            } else {
-                Err(Error::NotAligned { pc })
-            }
-        })
     }
 
     pub fn read_byte(&self, addr: u16) -> Result<u8> {
@@ -116,6 +109,11 @@ mod tests {
         ram.load(0x200, &[4, 5, 6]).unwrap();
         assert_eq!(ram.read_bytes(0x200, 3).unwrap(), &[4, 5, 6]);
 
+        assert_eq!(
+            ram.load(0x1000, &[1, 2, 3]).unwrap_err(),
+            Error::InvalidAddress { addr: 0x1000 }
+        );
+
         let too_long = [0; 1024];
         assert_eq!(
             ram.load(0xF00, &too_long).unwrap_err(),
@@ -127,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn sprite_placement() {
+    fn sprites() {
         let ram = Ram::new();
         assert_eq!(&ram.mem[0x1B0..0x1B5], [0xF0, 0x90, 0x90, 0x90, 0xF0]);
         assert_eq!(&ram.mem[0x1FB..0x200], [0xF0, 0x80, 0xF0, 0x80, 0x80]);

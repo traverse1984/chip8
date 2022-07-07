@@ -10,7 +10,7 @@ pub enum Error {
     InvalidRegister { reg: u8 },
     NotWritable { addr: u16 },
     NotAligned { pc: u16 },
-    LoadTooLong { addr: usize, len: usize },
+    LoadTooLong { addr: u16, len: usize },
     StackOverflow { frame: u16 },
     StackEmpty,
 }

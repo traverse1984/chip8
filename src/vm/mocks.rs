@@ -144,7 +144,7 @@ impl Delay for MockDelay {
     }
 }
 
-mod test_mocks {
+mod tests {
     use super::*;
 
     #[test]

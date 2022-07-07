@@ -39,14 +39,38 @@ where
     D: Delay,
 {
     pub const KEYPAD_POLL_FREQUENCY: u32 = 1000;
-    pub const INSTRUCTION_SIZE: u16 = 2;
+    pub const INSTRUCTION_SIZE: u8 = 2;
+    pub const INSTRUCTION_STEP: u16 = 2;
 
     fn load<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Result<(), ()> {
-        self.ram.load(0x200, program.into().as_bytes()).unwrap();
-        Ok(())
+        self.ram
+            .load(0x200, program.into().as_bytes())
+            .map_err(|_| ())
+    }
+
+    fn run(&mut self) -> Status {
+        self.pc = 0x200;
+        loop {
+            self.step()?;
+        }
+    }
+
+    fn read_instruction(&mut self, addr: u16) -> Result<u16, Error> {
+        let addr = self.ram.to_valid_address(addr)?;
+
+        if addr % Self::INSTRUCTION_STEP == 0 {
+            let bytes = self.ram.read_bytes(addr, Self::INSTRUCTION_SIZE)?;
+            Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+        } else {
+            Err(Error::NotAligned(addr))
+        }
     }
 
     fn step(&mut self) -> Status {
+        self.read_instruction(self.pc)
+            .and_then(|instruction| self.exec(instruction))?;
+
+        self.pc += Self::INSTRUCTION_STEP;
         Ok(())
     }
 
@@ -87,7 +111,7 @@ where
             // SE Vx, byte
             3 => {
                 if self.reg.get(vx)? == byte {
-                    self.pc += Self::INSTRUCTION_SIZE;
+                    self.pc += Self::INSTRUCTION_STEP;
                 }
                 Ok(())
             }
@@ -95,7 +119,7 @@ where
             // SNE Vx, byte
             4 => {
                 if self.reg.get(vx)? != byte {
-                    self.pc += Self::INSTRUCTION_SIZE;
+                    self.pc += Self::INSTRUCTION_STEP;
                 }
                 Ok(())
             }
@@ -103,7 +127,7 @@ where
             // // SE Vx, Vy, 0
             5 if nibble == 0 => {
                 if self.reg.get(vx)? == self.reg.get(vy)? {
-                    self.pc += Self::INSTRUCTION_SIZE;
+                    self.pc += Self::INSTRUCTION_STEP;
                 }
                 Ok(())
             }
@@ -186,7 +210,7 @@ where
             // // SNE
             9 if nibble == 0 => {
                 if self.reg.get(vx)? != self.reg.get(vy)? {
-                    self.pc += Self::INSTRUCTION_SIZE;
+                    self.pc += Self::INSTRUCTION_STEP;
                 }
                 Ok(())
             }
@@ -224,7 +248,7 @@ where
                     .read_key(&mut self.delay)
                     .map_err(|e| e.into())?
                 {
-                    Some(key) if key == self.reg.get(vx)? => self.pc += Self::INSTRUCTION_SIZE,
+                    Some(key) if key == self.reg.get(vx)? => self.pc += Self::INSTRUCTION_STEP,
                     _ => (),
                 }
                 Ok(())
@@ -237,7 +261,7 @@ where
                     .read_key(&mut self.delay)
                     .map_err(|e| e.into())?
                 {
-                    Some(key) if key != self.reg.get(vx)? => self.pc += Self::INSTRUCTION_SIZE,
+                    Some(key) if key != self.reg.get(vx)? => self.pc += Self::INSTRUCTION_STEP,
                     _ => (),
                 }
 
@@ -426,6 +450,32 @@ mod tests {
             $(chip.exec($inst).unwrap();)+
             chip
         }};
+    }
+
+    #[test]
+    fn load() {
+        let mut chip = chip!();
+        chip.load(&[1u8, 2, 3, 4][..]).unwrap();
+
+        assert_eq!(
+            chip.state().ram.read_bytes(0x200, 4).unwrap(),
+            &[1, 2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn read_instruction() {
+        let mut chip = chip!();
+        chip.load(&mut [0x11u16, 0x22u16, 0x33u16][..]).unwrap();
+
+        assert_eq!(chip.read_instruction(0x200).unwrap(), 0x11);
+        assert_eq!(chip.read_instruction(0x202).unwrap(), 0x22);
+        assert_eq!(chip.read_instruction(0x204).unwrap(), 0x33);
+
+        assert_eq!(
+            chip.read_instruction(0x201).unwrap_err(),
+            Error::NotAligned(0x201)
+        )
     }
 
     #[test]

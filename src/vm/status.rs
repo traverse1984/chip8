@@ -3,10 +3,11 @@ use crate::pal;
 
 pub type Status = Result<(), Error>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Peripheral(pal::Error),
     Memory(mem::Error),
+    NotAligned(u16),
     Instruction(u16),
 }
 
