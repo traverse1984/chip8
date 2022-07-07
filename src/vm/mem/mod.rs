@@ -5,5 +5,5 @@ mod stack;
 
 pub use mem::{Error, Result, State};
 pub use ram::Ram;
-pub use registers::{Registers, V_FLAG};
+pub use registers::Registers;
 pub use stack::Stack;

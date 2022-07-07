@@ -5,8 +5,6 @@ pub struct Registers {
     reg: [u8; 16],
 }
 
-pub const V_FLAG: u8 = 0x0F;
-
 impl Registers {
     pub fn new() -> Self {
         Self::default()

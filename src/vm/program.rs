@@ -18,15 +18,15 @@ impl<'a> From<&'a [u8]> for Program<'a> {
 
 impl<'a> From<&'a mut [u16]> for Program<'a> {
     fn from(program: &'a mut [u16]) -> Self {
-        if cfg!(target_endian = "little") {
-            program.iter_mut().for_each(|word| *word = word.to_be());
+        #[cfg(target_endian = "little")]
+        program.iter_mut().for_each(|word| *word = word.to_be());
+
+        let len = program.len().checked_mul(2).unwrap();
+        let ptr: *const u8 = program.as_ptr().cast();
+
+        Self {
+            program: unsafe { slice::from_raw_parts(ptr, len) },
         }
-
-        let (pre, bytes, post) = unsafe { program.align_to::<u8>() };
-        assert_eq!(pre, &[]);
-        assert_eq!(post, &[]);
-
-        Self { program: bytes }
     }
 }
 
