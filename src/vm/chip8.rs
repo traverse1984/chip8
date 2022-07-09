@@ -67,11 +67,10 @@ where
 
     fn exec(&mut self, instruction: u16) -> Status {
         let cmd = instruction >> 12;
-        let nnn = instruction & 0x0FFF;
-        let byte = nnn as u8; // Lossy
+        let addr = instruction & 0x0FFF;
+        let byte = addr as u8;
         let nibble = byte & 0xF;
-        let vx = (nnn >> 8) as u8;
-        let vy = byte >> 4;
+        let vx_addr = (addr >> 8) as u8;
 
         let Mem {
             i,
@@ -83,129 +82,111 @@ where
             ram,
         } = &mut self.mem;
 
-        macro_rules! pc {
-            (++ if $cond: expr) => {
-                if $cond {
-                    *pc += Self::INST_STEP;
-                }
-            };
+        let vx = reg.get(vx_addr)?;
+        let vy = reg.get(byte >> 4)?;
 
+        /// Set or increment the program counter
+        macro_rules! jump {
             ($($code: tt)*) => {{
                 *pc = $($code)*;
                 return Ok(());
             }};
         }
 
-        macro_rules! vx {
-            () => {
-                reg.get(vx)?
+        macro_rules! skip {
+            ($($cond: tt)+) => {
+                if $($cond)+ {
+                    *pc += Self::INST_STEP;
+                }
             };
+        }
 
+        /// Set the `vx` and flag registers
+        macro_rules! set {
             (vf = $flag: expr) => {{
                 reg.set(Self::FLAG, $flag)?;
             }};
 
             ($val: expr $(, vf = $flag: expr)?) => {{
-                reg.set(vx, $val)?;
+                reg.set(vx_addr, $val)?;
                 $( reg.set(Self::FLAG, $flag)?; )?
             }};
         }
 
-        macro_rules! vy {
-            () => {
-                reg.get(vy)?
-            };
-        }
-
         match cmd {
             // CLS
-            0 if nnn == 0x0E0 => self.screen.clear().map_err(|e| e.into())?,
+            0 if addr == 0x0E0 => self.screen.clear().map_err(|e| e.into())?,
 
             // RET
-            0 if nnn == 0x0EE => pc!(stack.pop()?),
+            0 if addr == 0x0EE => jump!(stack.pop()?),
 
             // JP addr
-            1 => pc!(nnn),
+            1 => jump!(addr),
 
             // CALL addr
             2 => {
                 stack.push(*pc)?;
-                pc!(nnn);
+                jump!(addr);
             }
 
             // SE Vx, byte
-            3 => pc!(++ if vx!() == byte),
+            3 => skip!(vx == byte),
 
             // SNE Vx, byte
-            4 => pc!(++ if vx!() != byte),
+            4 => skip!(vx != byte),
 
             // // SE Vx, Vy, 0
-            5 if nibble == 0 => pc!(++ if vx!() == vy!()),
+            5 if nibble == 0 => skip!(vx == vy),
 
             // // LD Vx, byte
-            6 => vx!(byte),
+            6 => set!(byte),
 
             // // ADD Vx, byte
-            7 => vx!(byte.wrapping_add(vx!())),
+            7 => set!(byte.wrapping_add(vx)),
 
             // // XOR
             8 => match nibble {
                 // LD Vx, Vy
-                0 => vx!(vy!()),
+                0 => set!(vy),
 
                 // OR Vx, Vy
-                1 => vx!(vx!() | vy!()),
+                1 => set!(vx | vy),
 
                 // AND Vx, Vy
-                2 => vx!(vx!() & vy!()),
+                2 => set!(vx & vy),
 
                 // XOR Vx, Vy
-                3 => vx!(vx!() ^ vy!()),
+                3 => set!(vx ^ vy),
 
                 // ADD Vx, Vy
-                4 => {
-                    let (x, y) = (vx!(), vy!());
-                    match x.checked_add(y) {
-                        Some(val) => vx!(val),
-                        None => vx!(x.wrapping_add(y), vf = 1),
-                    }
-                }
+                4 => match vx.checked_add(vy) {
+                    Some(val) => set!(val),
+                    None => set!(vx.wrapping_add(vy), vf = 1),
+                },
 
                 // SUB Vx, Vy
-                5 => {
-                    let (x, y) = (vx!(), vy!());
-                    vx!(x.wrapping_sub(y), vf = (x > y) as u8);
-                }
+                5 => set!(vx.wrapping_sub(vy), vf = (vx > vy) as u8),
 
                 // SHR Vx (, Vy)
-                6 => {
-                    let x = vx!();
-                    vx!(x >> 1, vf = x & 1);
-                }
+                6 => set!(vx >> 1, vf = vx & 1),
 
                 // SUBN Vx, Vy
-                7 => {
-                    let (x, y) = (vx!(), vy!());
-                    vx!(y.wrapping_sub(x), vf = (y > x) as u8);
-                }
+                7 => set!(vy.wrapping_sub(vx), vf = (vy > vx) as u8),
 
                 // SHL Vx (, Vy)
-                0xE => {
-                    let x = vx!();
-                    vx!(x << 1, vf = x >> 7);
-                }
+                0xE => set!(vx << 1, vf = vx >> 7),
 
                 _ => return Err(Error::Instruction(instruction)),
             },
 
             // // SNE
-            9 if nibble == 0 => pc!(++ if vx!() != vy!()),
+            9 if nibble == 0 => skip!(vx != vy),
 
             // // LD I, addr
-            0xA => *i = nnn,
+            0xA => *i = addr,
 
             // // JP V0, addr
-            0xB => pc!(nnn + reg.get(0)? as u16),
+            0xB => jump!(addr + reg.get(0)? as u16),
 
             // // RND Vx, byte
             0xC => todo!("Rand"),
@@ -213,23 +194,23 @@ where
             // // DRW Vx, Vy, len
             0xD => {
                 let data = ram.read_bytes(*i, nibble)?;
-                let erased = self.screen.xor(vx!(), vy!(), data).map_err(|e| e.into())?;
-                vx!(vf = erased as u8);
+                let erased = self.screen.xor(vx, vy, data).map_err(|e| e.into())?;
+                set!(vf = erased as u8);
             }
 
             // // SKP Vx
             0xE if byte == 0x9E => match Self::read_key(&mut self.keypad, &mut self.delay)? {
-                Some(key) => pc!(++ if key == vx!()),
+                Some(key) => skip!(key == vx),
                 _ => (),
             },
 
             // // SKNP Vx
             0xE if byte == 0xA1 => match Self::read_key(&mut self.keypad, &mut &mut self.delay)? {
-                Some(key) => pc!(++ if key != vx!()),
+                Some(key) => skip!(key != vx),
                 _ => (),
             },
 
-            0xF if byte == 0x07 => vx!(*dt),
+            0xF if byte == 0x07 => set!(*dt),
 
             // LD Vx, K
             // All execution means what? Also stop secrementing timers?
@@ -242,32 +223,31 @@ where
                     self.delay.delay_us(Self::POLL_FREQ).map_err(|e| e.into())?;
                 };
 
-                vx!(key);
+                set!(key);
             }
 
             // LD DT, Vx
-            0xF if byte == 0x15 => *dt = vx!(),
+            0xF if byte == 0x15 => *dt = vx,
 
             // LD ST, Vx
-            0xF if byte == 0x18 => *st = vx!(),
+            0xF if byte == 0x18 => *st = vx,
 
             // ADD I, Vx
-            0xF if byte == 0x1E => *i = i.wrapping_add(vx!() as u16),
+            0xF if byte == 0x1E => *i = i.wrapping_add(vx as u16),
 
             // LD F, Vx
-            0xF if byte == 0x29 => *i = ram.get_sprite_addr(vx!())?,
+            0xF if byte == 0x29 => *i = ram.get_sprite_addr(vx)?,
 
             // LD B, Vx
             0xF if byte == 0x33 => {
-                let x = vx!();
-                ram.write_byte(*i, x / 100)?;
-                ram.write_byte(i.saturating_add(1), (x / 10) % 10)?;
-                ram.write_byte(i.saturating_add(2), x % 10)?;
+                ram.write_byte(*i, vx / 100)?;
+                ram.write_byte(i.saturating_add(1), (vx / 10) % 10)?;
+                ram.write_byte(i.saturating_add(2), vx % 10)?;
             }
 
             // LD [I], Vx
             0xF if byte == 0x55 => {
-                for loc in 0..=vx {
+                for loc in 0..=vx_addr {
                     let val = reg.get(loc)?;
                     ram.write_byte(i.saturating_add(loc.into()), val)?;
                 }
@@ -275,7 +255,7 @@ where
 
             // Ld Vx, [I]
             0xF if byte == 0x65 => {
-                for (&loc, val) in ram.read_bytes(*i, vx + 1)?.iter().zip(0..=vx) {
+                for (&loc, val) in ram.read_bytes(*i, vx + 1)?.iter().zip(0..=vx_addr) {
                     reg.set(loc, val)?;
                 }
             }
@@ -283,7 +263,7 @@ where
             _ => Err(Error::Instruction(instruction))?,
         };
 
-        pc!(++ if true);
+        skip!(true);
         Ok(())
     }
 }
@@ -354,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn read_instruction() {
+    fn read_inst() {
         let mut chip = chip!();
         chip.load(&mut [0x11u16, 0x22u16, 0x33u16][..]).unwrap();
 
@@ -392,5 +372,92 @@ mod tests {
     }
 
     #[test]
-    fn se_3xkk() {}
+    fn se_xkk() {}
+
+    #[test]
+    fn sne_xkk() {}
+
+    #[test]
+    fn se_xy() {}
+
+    #[test]
+    fn ld_xkk() {}
+
+    #[test]
+    fn add_xkk() {}
+
+    #[test]
+    fn ld_x_y() {}
+
+    #[test]
+    fn or_xy() {}
+
+    #[test]
+    fn and_xy() {}
+
+    #[test]
+    fn xor_xy() {}
+
+    #[test]
+    fn add_xy() {}
+
+    #[test]
+    fn sub_xy() {}
+
+    #[test]
+    fn shr_x() {}
+
+    #[test]
+    fn subn_xy() {}
+
+    #[test]
+    fn shl_x() {}
+
+    #[test]
+    fn sne_xy0() {}
+
+    #[test]
+    fn ld_i_nnn() {}
+
+    #[test]
+    fn jp0_nnn() {}
+
+    #[test]
+    fn rnd_xkk() {}
+
+    #[test]
+    fn drw_xyn() {}
+
+    #[test]
+    fn skp_x() {}
+
+    #[test]
+    fn sknp_x() {}
+
+    #[test]
+    fn ld_x_dt() {}
+
+    #[test]
+    fn ld_x_key() {}
+
+    #[test]
+    fn ld_dt_x() {}
+
+    #[test]
+    fn ld_st_x() {}
+
+    #[test]
+    fn add_i_x() {}
+
+    #[test]
+    fn ld_sprite_x() {}
+
+    #[test]
+    fn ld_bcd_x() {}
+
+    #[test]
+    fn ld_i_x() {}
+
+    #[test]
+    fn ld_x_i() {}
 }
