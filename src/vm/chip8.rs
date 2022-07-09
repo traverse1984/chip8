@@ -1,65 +1,68 @@
-use super::mem::State;
+use super::mem::Mem;
 use super::program::Program;
 use super::status::{Error, Status};
-use crate::pal::{Buzzer, Delay, Keypad, Screen};
+use crate::hal::{Buzzer, Delay, Keypad, Rng, Screen};
 
-pub struct Chip8<S, K, B, D>
+pub struct Chip8<S, K, B, R, D>
 where
     S: Screen,
     K: Keypad,
     B: Buzzer,
+    R: Rng,
     D: Delay,
 {
-    state: State,
     screen: S,
     keypad: K,
     buzzer: B,
+    rng: R,
     delay: D,
+    mem: Mem,
 }
 
-impl<S, K, B, D> Chip8<S, K, B, D>
+impl<S, K, B, R, D> Chip8<S, K, B, R, D>
 where
     S: Screen,
     K: Keypad,
     B: Buzzer,
+    R: Rng,
     D: Delay,
 {
-    pub const KEYPAD_POLL_FREQUENCY: u32 = 1000;
-    pub const INST_LEN: u8 = 2;
-    pub const STEP: u16 = 2;
+    pub const POLL_FREQ: u32 = 1000;
+    pub const INST_STEP: u16 = 2;
+    pub const INST_BYTES: u8 = 2;
     pub const FLAG: u8 = 0x0F;
 
     fn load<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Result<(), ()> {
-        self.state
+        self.mem
             .ram
             .load(0x200, program.into().as_bytes())
             .map_err(|_| ())
     }
 
     fn run(&mut self) -> Status {
-        self.state.pc = 0x200;
+        self.mem.pc = 0x200;
         loop {
             self.step()?;
         }
     }
 
-    fn read_instruction(&mut self, addr: u16) -> Result<u16, Error> {
-        let addr = self.state.ram.to_valid_address(addr)?;
-
-        if addr % Self::STEP == 0 {
-            let bytes = self.state.ram.read_bytes(addr, Self::INST_LEN)?;
-            Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+    fn read_inst(&mut self, addr: u16) -> Result<u16, Error> {
+        if self.mem.ram.to_read_addr(addr)? % Self::INST_STEP == 0 {
+            Ok(u16::from_be_bytes([
+                self.mem.ram.read_byte(addr)?,
+                self.mem.ram.read_byte(addr.saturating_add(1))?,
+            ]))
         } else {
             Err(Error::NotAligned(addr))
         }
     }
 
     fn step(&mut self) -> Status {
-        self.read_instruction(self.state.pc)
-            .and_then(|inst| self.exec(inst))?;
+        self.read_inst(self.mem.pc).and_then(|inst| self.exec(inst))
+    }
 
-        self.state.pc += Self::STEP;
-        Ok(())
+    fn read_key(keypad: &mut K, delay: &mut D) -> Result<Option<u8>, Error> {
+        keypad.read_key(delay).map_err(|e| e.into().into())
     }
 
     fn exec(&mut self, instruction: u16) -> Status {
@@ -70,7 +73,7 @@ where
         let vx = (nnn >> 8) as u8;
         let vy = byte >> 4;
 
-        let State {
+        let Mem {
             i,
             pc,
             dt,
@@ -78,325 +81,261 @@ where
             reg,
             stack,
             ram,
-        } = &mut self.state;
+        } = &mut self.mem;
+
+        macro_rules! pc {
+            (++ if $cond: expr) => {
+                if $cond {
+                    *pc += Self::INST_STEP;
+                }
+            };
+
+            ($($code: tt)*) => {{
+                *pc = $($code)*;
+                return Ok(());
+            }};
+        }
+
+        macro_rules! vx {
+            () => {
+                reg.get(vx)?
+            };
+
+            (vf = $flag: expr) => {{
+                reg.set(Self::FLAG, $flag)?;
+            }};
+
+            ($val: expr $(, vf = $flag: expr)?) => {{
+                reg.set(vx, $val)?;
+                $( reg.set(Self::FLAG, $flag)?; )?
+            }};
+        }
+
+        macro_rules! vy {
+            () => {
+                reg.get(vy)?
+            };
+        }
 
         match cmd {
             // CLS
-            0 if nnn == 0x0E0 => {
-                self.screen.clear().map_err(|e| e.into())?;
-                Ok(())
-            }
+            0 if nnn == 0x0E0 => self.screen.clear().map_err(|e| e.into())?,
 
             // RET
-            0 if nnn == 0x0EE => {
-                *pc = stack.pop()?;
-                Ok(())
-            }
+            0 if nnn == 0x0EE => pc!(stack.pop()?),
 
             // JP addr
-            1 => {
-                *pc = nnn;
-                Ok(())
-            }
+            1 => pc!(nnn),
 
             // CALL addr
             2 => {
                 stack.push(*pc)?;
-                *pc = nnn;
-                Ok(())
+                pc!(nnn);
             }
 
             // SE Vx, byte
-            3 => {
-                if reg.get(vx)? == byte {
-                    *pc += Self::STEP;
-                }
-                Ok(())
-            }
+            3 => pc!(++ if vx!() == byte),
 
             // SNE Vx, byte
-            4 => {
-                if reg.get(vx)? != byte {
-                    *pc += Self::STEP;
-                }
-                Ok(())
-            }
+            4 => pc!(++ if vx!() != byte),
 
             // // SE Vx, Vy, 0
-            5 if nibble == 0 => {
-                if reg.get(vx)? == reg.get(vy)? {
-                    *pc += Self::STEP;
-                }
-                Ok(())
-            }
+            5 if nibble == 0 => pc!(++ if vx!() == vy!()),
 
             // // LD Vx, byte
-            6 => {
-                reg.set(vx, byte)?;
-                Ok(())
-            }
+            6 => vx!(byte),
 
             // // ADD Vx, byte
-            7 => {
-                let add = reg.get(vx)?.wrapping_add(byte);
-                reg.set(vx, add)?;
-                Ok(())
-            }
+            7 => vx!(byte.wrapping_add(vx!())),
 
             // // XOR
-            8 => {
-                let byte = match nibble {
-                    // LD Vx, Vy
-                    0 => reg.get(vy)?,
+            8 => match nibble {
+                // LD Vx, Vy
+                0 => vx!(vy!()),
 
-                    // OR Vx, Vy
-                    1 => reg.get(vx)? | reg.get(vy)?,
+                // OR Vx, Vy
+                1 => vx!(vx!() | vy!()),
 
-                    // AND Vx, Vy
-                    2 => reg.get(vx)? & reg.get(vy)?,
+                // AND Vx, Vy
+                2 => vx!(vx!() & vy!()),
 
-                    // XOR Vx, Vy
-                    3 => reg.get(vx)? ^ reg.get(vy)?,
+                // XOR Vx, Vy
+                3 => vx!(vx!() ^ vy!()),
 
-                    // ADD Vx, Vy
-                    4 => {
-                        let (x, y) = (reg.get(vx)?, reg.get(vy)?);
-                        match x.checked_add(y) {
-                            Some(val) => val,
-                            None => {
-                                reg.set(Self::FLAG, 1)?;
-                                x.wrapping_add(y)
-                            }
-                        }
+                // ADD Vx, Vy
+                4 => {
+                    let (x, y) = (vx!(), vy!());
+                    match x.checked_add(y) {
+                        Some(val) => vx!(val),
+                        None => vx!(x.wrapping_add(y), vf = 1),
                     }
+                }
 
-                    // SUB Vx, Vy
-                    5 => {
-                        let (x, y) = (reg.get(vx)?, reg.get(vy)?);
-                        reg.set(Self::FLAG, (x > y) as u8)?;
-                        x.wrapping_sub(y)
-                    }
+                // SUB Vx, Vy
+                5 => {
+                    let (x, y) = (vx!(), vy!());
+                    vx!(x.wrapping_sub(y), vf = (x > y) as u8);
+                }
 
-                    // SHR Vx (, Vy)
-                    6 => {
-                        let x = reg.get(vx)?;
-                        reg.set(Self::FLAG, x & 1)?;
-                        x >> 1
-                    }
+                // SHR Vx (, Vy)
+                6 => {
+                    let x = vx!();
+                    vx!(x >> 1, vf = x & 1);
+                }
 
-                    // SUBN Vx, Vy
-                    7 => {
-                        let (x, y) = (reg.get(vx)?, reg.get(vy)?);
-                        reg.set(Self::FLAG, (y > x) as u8)?;
-                        y.wrapping_sub(x)
-                    }
+                // SUBN Vx, Vy
+                7 => {
+                    let (x, y) = (vx!(), vy!());
+                    vx!(y.wrapping_sub(x), vf = (y > x) as u8);
+                }
 
-                    // SHL Vx (, Vy)
-                    0xE => {
-                        let x = reg.get(vx)?;
-                        reg.set(Self::FLAG, x >> 7)?;
-                        x << 1
-                    }
+                // SHL Vx (, Vy)
+                0xE => {
+                    let x = vx!();
+                    vx!(x << 1, vf = x >> 7);
+                }
 
-                    _ => return Err(Error::Instruction(instruction)),
-                };
-
-                reg.set(vx, byte)?;
-                Ok(())
-            }
+                _ => return Err(Error::Instruction(instruction)),
+            },
 
             // // SNE
-            9 if nibble == 0 => {
-                if reg.get(vx)? != reg.get(vy)? {
-                    *pc += Self::STEP;
-                }
-                Ok(())
-            }
+            9 if nibble == 0 => pc!(++ if vx!() != vy!()),
 
             // // LD I, addr
-            0xA => {
-                *i = nnn;
-                Ok(())
-            }
+            0xA => *i = nnn,
 
             // // JP V0, addr
-            0xB => {
-                *pc = nnn + reg.get(0)? as u16;
-                Ok(())
-            }
+            0xB => pc!(nnn + reg.get(0)? as u16),
 
             // // RND Vx, byte
             0xC => todo!("Rand"),
 
             // // DRW Vx, Vy, len
             0xD => {
-                let x = reg.get(vx)?;
-                let y = reg.get(vy)?;
                 let data = ram.read_bytes(*i, nibble)?;
-
-                let erased = self.screen.xor(x, y, data).map_err(|e| e.into())?;
-                reg.set(Self::FLAG, erased as u8)?;
-                Ok(())
+                let erased = self.screen.xor(vx!(), vy!(), data).map_err(|e| e.into())?;
+                vx!(vf = erased as u8);
             }
 
             // // SKP Vx
-            0xE if byte == 0x9E => {
-                match self
-                    .keypad
-                    .read_key(&mut self.delay)
-                    .map_err(|e| e.into())?
-                {
-                    Some(key) if key == reg.get(vx)? => *pc += Self::STEP,
-                    _ => (),
-                }
-                Ok(())
-            }
+            0xE if byte == 0x9E => match Self::read_key(&mut self.keypad, &mut self.delay)? {
+                Some(key) => pc!(++ if key == vx!()),
+                _ => (),
+            },
 
             // // SKNP Vx
-            0xE if byte == 0xA1 => {
-                match self
-                    .keypad
-                    .read_key(&mut self.delay)
-                    .map_err(|e| e.into())?
-                {
-                    Some(key) if key != reg.get(vx)? => *pc += Self::STEP,
-                    _ => (),
-                }
+            0xE if byte == 0xA1 => match Self::read_key(&mut self.keypad, &mut &mut self.delay)? {
+                Some(key) => pc!(++ if key != vx!()),
+                _ => (),
+            },
 
-                Ok(())
-            }
-
-            0xF if byte == 0x07 => {
-                reg.set(vx, *dt)?;
-                Ok(())
-            }
+            0xF if byte == 0x07 => vx!(*dt),
 
             // LD Vx, K
             // All execution means what? Also stop secrementing timers?
             0xF if byte == 0x0A => {
                 let key = loop {
-                    if let Some(key) = self
-                        .keypad
-                        .read_key(&mut self.delay)
-                        .map_err(|e| e.into())?
-                    {
+                    if let Some(key) = Self::read_key(&mut self.keypad, &mut self.delay)? {
                         break key;
                     }
 
-                    self.delay
-                        .delay_us(Self::KEYPAD_POLL_FREQUENCY)
-                        .map_err(|e| e.into())?;
+                    self.delay.delay_us(Self::POLL_FREQ).map_err(|e| e.into())?;
                 };
 
-                reg.set(vx, key)?;
-                Ok(())
+                vx!(key);
             }
 
             // LD DT, Vx
-            0xF if byte == 0x15 => {
-                *dt = reg.get(vx)?;
-                Ok(())
-            }
+            0xF if byte == 0x15 => *dt = vx!(),
 
             // LD ST, Vx
-            0xF if byte == 0x18 => {
-                *st = reg.get(vx)?;
-                Ok(())
-            }
+            0xF if byte == 0x18 => *st = vx!(),
 
             // ADD I, Vx
-            0xF if byte == 0x1E => {
-                *i = i.wrapping_add(reg.get(vx)? as u16);
-                Ok(())
-            }
+            0xF if byte == 0x1E => *i = i.wrapping_add(vx!() as u16),
 
             // LD F, Vx
-            0xF if byte == 0x29 => {
-                *i = reg.get(vx).and_then(|x| ram.get_sprite_addr(x))?;
-                Ok(())
-            }
+            0xF if byte == 0x29 => *i = ram.get_sprite_addr(vx!())?,
 
             // LD B, Vx
             0xF if byte == 0x33 => {
-                let x = reg.get(vx)?;
-                let hundreds = x / 100;
-                let tens = (x / 10) % 10;
-                let units = x % 10;
-
-                ram.write_byte(*i, hundreds)?;
-                ram.write_byte(*i + 1, tens)?;
-                ram.write_byte(*i + 2, units)?;
-
-                Ok(())
+                let x = vx!();
+                ram.write_byte(*i, x / 100)?;
+                ram.write_byte(i.saturating_add(1), (x / 10) % 10)?;
+                ram.write_byte(i.saturating_add(2), x % 10)?;
             }
 
             // LD [I], Vx
             0xF if byte == 0x55 => {
-                for index in 0..=vx {
-                    reg.get(index)
-                        .and_then(|x| ram.write_byte(*i + index as u16, x))?;
+                for loc in 0..=vx {
+                    let val = reg.get(loc)?;
+                    ram.write_byte(i.saturating_add(loc.into()), val)?;
                 }
-                Ok(())
             }
 
             // Ld Vx, [I]
             0xF if byte == 0x65 => {
-                for (val, index) in ram.read_bytes(*i, vx + 1)?.iter().copied().zip(0..=vx) {
-                    reg.set(index, val)?;
+                for (&loc, val) in ram.read_bytes(*i, vx + 1)?.iter().zip(0..=vx) {
+                    reg.set(loc, val)?;
                 }
-                Ok(())
             }
 
-            _ => Err(Error::Instruction(instruction)),
-        }
+            _ => Err(Error::Instruction(instruction))?,
+        };
+
+        pc!(++ if true);
+        Ok(())
     }
 }
 
-impl<S, K, B, D> Chip8<S, K, B, D>
+impl<S, K, B, R, D> Chip8<S, K, B, R, D>
 where
     S: Screen,
     K: Keypad,
     B: Buzzer,
+    R: Rng,
     D: Delay,
 {
-    pub fn new(screen: S, keypad: K, buzzer: B, delay: D) -> Self {
-        Self::from_state(screen, keypad, buzzer, delay, State::default())
+    pub fn new(screen: S, keypad: K, buzzer: B, rng: R, delay: D) -> Self {
+        Self::from_state(screen, keypad, buzzer, rng, delay, Mem::default())
     }
 
-    pub fn from_state(screen: S, keypad: K, buzzer: B, delay: D, state: State) -> Self {
+    pub fn from_state(screen: S, keypad: K, buzzer: B, rng: R, delay: D, mem: Mem) -> Self {
         Self {
-            state,
+            mem,
             screen,
             keypad,
             buzzer,
+            rng,
             delay,
         }
     }
 
-    pub fn state(&self) -> &State {
-        &self.state
+    pub fn state(&self) -> &Mem {
+        &self.mem
     }
 
-    pub fn free(self) -> (S, K, B, D, State) {
+    pub fn free(self) -> (S, K, B, R, D, Mem) {
         let Chip8 {
             screen,
             keypad,
             buzzer,
+            rng,
             delay,
-            state,
+            mem,
         } = self;
 
-        (screen, keypad, buzzer, delay, state)
+        (screen, keypad, buzzer, rng, delay, mem)
     }
 }
 
 #[cfg(test)]
 mod tests {
     extern crate std;
+    use super::Error;
     use std::vec;
 
-    use super::{super::chip, *};
-    use crate::vm::mocks::ScreenCommand;
+    use crate::hal::{chip, ScreenCommand};
 
     macro_rules! exec {
         ($($inst: expr),+ $(; $($tail: tt)*)?) => {{
@@ -411,7 +350,7 @@ mod tests {
         let mut chip = chip!();
         chip.load(&[1u8, 2, 3, 4][..]).unwrap();
 
-        assert_eq!(chip.state.ram.read_bytes(0x200, 4).unwrap(), &[1, 2, 3, 4]);
+        assert_eq!(chip.mem.ram.read_bytes(0x200, 4).unwrap(), &[1, 2, 3, 4]);
     }
 
     #[test]
@@ -419,14 +358,10 @@ mod tests {
         let mut chip = chip!();
         chip.load(&mut [0x11u16, 0x22u16, 0x33u16][..]).unwrap();
 
-        assert_eq!(chip.read_instruction(0x200).unwrap(), 0x11);
-        assert_eq!(chip.read_instruction(0x202).unwrap(), 0x22);
-        assert_eq!(chip.read_instruction(0x204).unwrap(), 0x33);
-
-        assert_eq!(
-            chip.read_instruction(0x201).unwrap_err(),
-            Error::NotAligned(0x201)
-        )
+        assert_eq!(chip.read_inst(0x200).unwrap(), 0x11);
+        assert_eq!(chip.read_inst(0x202).unwrap(), 0x22);
+        assert_eq!(chip.read_inst(0x204).unwrap(), 0x33);
+        assert_eq!(chip.read_inst(0x201).unwrap_err(), Error::NotAligned(0x201))
     }
 
     #[test]
@@ -440,20 +375,20 @@ mod tests {
         let mut chip = chip!();
 
         chip.exec(0x1123).unwrap();
-        assert_eq!(chip.state.pc, 0x0123);
+        assert_eq!(chip.mem.pc, 0x0123);
 
         chip.exec(0x1456).unwrap();
-        assert_eq!(chip.state.pc, 0x0456);
+        assert_eq!(chip.mem.pc, 0x0456);
     }
 
     #[test]
     fn call() {
         let mut chip = chip!();
-        chip.state.pc = 0x0123;
+        chip.mem.pc = 0x0123;
         chip.exec(0x2456).unwrap();
 
-        assert_eq!(chip.state.pc, 0x0456);
-        assert_eq!(chip.state.stack.pop().unwrap(), 0x0123);
+        assert_eq!(chip.mem.pc, 0x0456);
+        assert_eq!(chip.mem.stack.pop().unwrap(), 0x0123);
     }
 
     #[test]

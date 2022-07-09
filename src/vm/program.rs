@@ -18,10 +18,11 @@ impl<'a> From<&'a [u8]> for Program<'a> {
 
 impl<'a> From<&'a mut [u16]> for Program<'a> {
     fn from(program: &'a mut [u16]) -> Self {
-        #[cfg(target_endian = "little")]
-        program.iter_mut().for_each(|word| *word = word.to_be());
+        if cfg!(target_endian = "little") {
+            program.iter_mut().for_each(|word| *word = word.to_be());
+        }
 
-        let len = program.len().checked_mul(2).unwrap();
+        let len = program.len() * 2;
         let ptr: *const u8 = program.as_ptr().cast();
 
         Self {

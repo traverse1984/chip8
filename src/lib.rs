@@ -1,4 +1,4 @@
 #![no_std]
 
-pub mod pal;
+pub mod hal;
 mod vm;

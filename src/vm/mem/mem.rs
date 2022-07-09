@@ -16,7 +16,7 @@ pub enum Error {
 }
 
 #[derive(Debug, Copy, Clone, Default)]
-pub struct State {
+pub struct Mem {
     pub i: u16,
     // Counter
     pub pc: u16,

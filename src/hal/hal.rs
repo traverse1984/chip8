@@ -5,6 +5,7 @@ pub enum Error {
     Keypad,
     Buzzer,
     Delay,
+    Rng,
 }
 
 /// Delay handler
@@ -56,4 +57,14 @@ where
 
     fn on(&mut self) -> Result<(), Self::Error>;
     fn off(&mut self) -> Result<(), Self::Error>;
+}
+
+/// Rng
+pub trait Rng
+where
+    Self::Error: Into<Error>,
+{
+    type Error;
+
+    fn random(&mut self) -> Result<u8, Self::Error>;
 }

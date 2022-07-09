@@ -1,18 +1,18 @@
 use super::mem;
-use crate::pal;
+use crate::hal;
 
 pub type Status = Result<(), Error>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
-    Peripheral(pal::Error),
+    Peripheral(hal::Error),
     Memory(mem::Error),
     NotAligned(u16),
     Instruction(u16),
 }
 
-impl From<pal::Error> for Error {
-    fn from(err: pal::Error) -> Self {
+impl From<hal::Error> for Error {
+    fn from(err: hal::Error) -> Self {
         Error::Peripheral(err)
     }
 }

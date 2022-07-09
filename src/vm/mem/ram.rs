@@ -23,13 +23,8 @@ impl Ram {
         Self { mem }
     }
 
-    fn is_address(addr: u16) -> bool {
-        addr < 0x1000
-    }
-
     pub fn load(&mut self, addr: u16, bytes: &[u8]) -> Result {
-        let addr = self.to_valid_address(addr)?;
-        let index = addr as usize;
+        let index = self.to_read_addr(addr)? as usize;
 
         if bytes.len() <= 4096 - index {
             let target = &mut self.mem[index..index + bytes.len()];
@@ -43,41 +38,34 @@ impl Ram {
         }
     }
 
-    pub fn to_valid_address(&self, addr: u16) -> Result<u16> {
-        if Self::is_address(addr) {
-            Ok(addr)
-        } else {
-            Err(Error::InvalidAddress { addr })
+    pub fn to_read_addr(&self, addr: u16) -> Result<u16> {
+        match addr {
+            0..=0xFFF => Ok(addr),
+            _ => Err(Error::InvalidAddress { addr }),
+        }
+    }
+
+    pub fn to_write_addr(&self, addr: u16) -> Result<u16> {
+        match addr {
+            0x200.. => self.to_read_addr(addr),
+            _ => Err(Error::NotWritable { addr }),
         }
     }
 
     pub fn read_byte(&self, addr: u16) -> Result<u8> {
-        if Self::is_address(addr) {
-            Ok(self.mem[addr as usize])
-        } else {
-            Err(Error::InvalidAddress { addr })
-        }
-    }
-
-    pub fn write_byte(&mut self, addr: u16, val: u8) -> Result {
-        if Self::is_address(addr) && addr >= 0x200 {
-            Ok(self.mem[addr as usize] = val)
-        } else if addr < 0x200 {
-            Err(Error::NotWritable { addr })
-        } else {
-            Err(Error::InvalidAddress { addr })
-        }
+        self.to_read_addr(addr).map(|loc| self.mem[loc as usize])
     }
 
     pub fn read_bytes(&self, addr: u16, len: u8) -> Result<&[u8]> {
-        let offset = addr as usize;
-        let end = offset + len as usize;
-
-        if Self::is_address(addr) && end <= 0x1000 && len > 0 {
-            Ok(&self.mem[offset..end])
-        } else {
-            Err(Error::InvalidSlice { addr, len })
+        match (addr, addr + len as u16) {
+            (0..=0xFFF, end @ 0..=0xFFF) => Ok(&self.mem[addr as usize..end as usize]),
+            _ => Err(Error::InvalidSlice { addr, len }),
         }
+    }
+
+    pub fn write_byte(&mut self, addr: u16, data: u8) -> Result {
+        self.to_write_addr(addr)
+            .map(|loc| self.mem[loc as usize] = data)
     }
 
     pub fn get_sprite_addr(&self, sprite: u8) -> Result<u16> {
