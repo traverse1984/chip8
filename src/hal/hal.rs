@@ -28,7 +28,7 @@ where
     /// XOR the [&\[u8\]](`u8`) into the current display starting at position
     /// `(x,y)`, then update the display. Returns a boolean indicating whether
     /// pixels were erased by this operation.
-    fn xor(&mut self, x: u8, y: u8, data: &[u8]) -> Result<bool, Self::Error>;
+    fn draw(&mut self, x: u8, y: u8, data: &[u8]) -> Result<bool, Self::Error>;
 
     /// Clear the entire display
     fn clear(&mut self) -> Result<(), Self::Error>;

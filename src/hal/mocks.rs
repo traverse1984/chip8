@@ -77,7 +77,7 @@ impl Screen for MockScreen {
         Ok(())
     }
 
-    fn xor(&mut self, x: u8, y: u8, data: &[u8]) -> Result<bool, Self::Error> {
+    fn draw(&mut self, x: u8, y: u8, data: &[u8]) -> Result<bool, Self::Error> {
         self.commands.push(ScreenCommand::Draw {
             x,
             y,
@@ -171,9 +171,9 @@ mod tests {
     #[test]
     fn screen() {
         let mut screen = MockScreen::default();
-        screen.xor(1, 1, &[1, 2, 3]).unwrap();
+        screen.draw(1, 1, &[1, 2, 3]).unwrap();
         screen.clear().unwrap();
-        screen.xor(2, 2, &[2, 3, 4]).unwrap();
+        screen.draw(2, 2, &[2, 3, 4]).unwrap();
 
         assert_eq!(
             screen.commands,
@@ -243,7 +243,7 @@ mod tests {
         let chip = chip!();
         let (mut screen, mut keypad, _, mut rng, mut delay, _) = chip.free();
 
-        assert_eq!(screen.xor(0, 0, &[0]).unwrap(), false);
+        assert_eq!(screen.draw(0, 0, &[0]).unwrap(), false);
         assert_eq!(keypad.read_key(&mut delay).unwrap(), None);
         assert_eq!(rng.random().unwrap_err(), Error::Rng);
 
@@ -255,7 +255,7 @@ mod tests {
 
         let (mut screen, mut keypad, _, mut rng, mut delay, _) = chip.free();
 
-        assert_eq!(screen.xor(0, 0, &[0]).unwrap(), true);
+        assert_eq!(screen.draw(0, 0, &[0]).unwrap(), true);
         assert_eq!(keypad.read_key(&mut delay).unwrap(), Some(1));
         assert_eq!(rng.random().unwrap(), 1);
     }
