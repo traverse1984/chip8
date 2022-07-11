@@ -20,14 +20,12 @@ macro_rules! chip {
     };
 
     (
-        collision = $collision: literal;
-        keys = [ $($key: expr),* ];
-        rand = [ $($rand: literal),* ];
+        $(keys = [ $($key: expr),* ] $(,)? )?
+        $(rand = [ $($rand: literal),* ] $(,)? )?
     ) => {{
         let mut peripherals = crate::hal::mocks::Peripherals::default();
-        peripherals.screen.set_collision($collision);
-        peripherals.keypad.set_sequence([ $($key),* ].to_vec());
-        peripherals.rng.set_sequence([ $($rand),* ].to_vec());
+        $(peripherals.keypad.set_sequence([ $($key),* ].to_vec());)?
+        $(peripherals.rng.set_sequence([ $($rand),* ].to_vec());)?
         chip!(@make peripherals)
     }};
 }
@@ -248,14 +246,12 @@ mod tests {
         assert_eq!(rng.random().unwrap_err(), Error::Rng);
 
         let chip = chip! {
-            collision = true;
-            keys = [Some(1)];
-            rand = [1];
+            keys = [Some(1)],
+            rand = [1]
         };
 
-        let (mut screen, mut keypad, _, mut rng, mut delay, _) = chip.free();
+        let (_, mut keypad, _, mut rng, mut delay, _) = chip.free();
 
-        assert_eq!(screen.draw(0, 0, &[0]).unwrap(), true);
         assert_eq!(keypad.read_key(&mut delay).unwrap(), Some(1));
         assert_eq!(rng.random().unwrap(), 1);
     }

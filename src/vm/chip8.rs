@@ -188,7 +188,7 @@ where
             0xB => jump!(addr + reg.get(0)? as u16),
 
             // // RND Vx, byte
-            0xC => todo!("Rand"),
+            0xC => set!(byte & self.rng.random().map_err(|e| e.into())?),
 
             // // DRW Vx, Vy, len
             0xD => {
@@ -254,7 +254,7 @@ where
 
             // Ld Vx, [I]
             0xF if byte == 0x65 => {
-                for (&loc, val) in ram.read_bytes(*i, vx + 1)?.iter().zip(0..=vx_addr) {
+                for (&val, loc) in ram.read_bytes(*i, vx_addr + 1)?.iter().zip(0..=vx_addr) {
                     reg.set(loc, val)?;
                 }
             }
@@ -387,10 +387,11 @@ mod tests {
         let mut chip = reg!(0 = 0x23);
 
         chip.exec(0x3023).unwrap();
-        assert_eq!(chip.mem.pc, 4);
+        assert_eq!(chip.mem.pc, 2 * INST_STEP);
 
+        chip.mem.pc = 0;
         chip.exec(0x3024).unwrap();
-        assert_eq!(chip.mem.pc, 6);
+        assert_eq!(chip.mem.pc, INST_STEP);
     }
 
     // 4xkk
@@ -401,10 +402,11 @@ mod tests {
         let mut chip = reg!(0 = 0x23);
 
         chip.exec(0x4023).unwrap();
-        assert_eq!(chip.mem.pc, 2);
+        assert_eq!(chip.mem.pc, INST_STEP);
 
+        chip.mem.pc = 0;
         chip.exec(0x4024).unwrap();
-        assert_eq!(chip.mem.pc, 6);
+        assert_eq!(chip.mem.pc, 2 * INST_STEP);
     }
 
     // 5xy0
@@ -579,95 +581,254 @@ mod tests {
     // Skip next instruction if Vx != Vy.
     // The values of Vx and Vy are compared, and if they are not equal, the program counter is increased by 2.
     #[test]
-    fn sne_x_y() {}
+    fn sne_x_y() {
+        let mut chip = reg!(0 = 1, 1 = 2, 2 = 1);
+
+        chip.exec(0x9010).unwrap();
+        assert_eq!(chip.mem.pc, 2 * INST_STEP);
+
+        chip.mem.pc = 0;
+        chip.exec(0x9020).unwrap();
+        assert_eq!(chip.mem.pc, INST_STEP);
+    }
 
     // Aaddr - LD I, addr
     // Set I = addr.
     // The value of register I is set to addr.
     #[test]
-    fn ld_i_nnn() {}
+    fn ld_i_nnn() {
+        let mut chip = chip!();
+
+        chip.exec(0xA123).unwrap();
+        assert_eq!(chip.mem.i, 0x123);
+    }
 
     // Baddr - JP V0, addr
     // Jump to location addr + V0.
     // The program counter is set to addr plus the value of V0.
     #[test]
-    fn jp0_nnn() {}
+    fn jp0_nnn() {
+        let mut chip = reg!(0 = 3);
+
+        chip.exec(0xB120).unwrap();
+        assert_eq!(chip.mem.pc, 0x123);
+    }
 
     // Cxkk - RND Vx, byte
     // Set Vx = random byte AND kk.
     // The interpreter generates a random number from 0 to 255, which is then ANDed with the value kk. The results are stored in Vx. See instruction 8xy2 for more information on AND.
     #[test]
-    fn rnd_x_kk() {}
+    fn rnd_x_kk() {
+        let mut chip = chip!(rand = [3, 2, 5]);
+
+        chip.exec(0xC0FF).unwrap();
+        assert_eq!(reg!(chip 0), 3);
+
+        chip.exec(0xC0FF).unwrap();
+        assert_eq!(reg!(chip 0), 2);
+
+        chip.exec(0xC004).unwrap();
+        assert_eq!(reg!(chip 0), 4);
+    }
 
     // Dxyn - DRW Vx, Vy, nibble
     // Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
     // The interpreter reads n bytes from memory, starting at the address stored in I. These bytes are then displayed as sprites on screen at coordinates (Vx, Vy). Sprites are XORed onto the existing screen. If this causes any pixels to be erased, VF is set to 1, otherwise it is set to 0. If the sprite is positioned so part of it is outside the coordinates of the display, it wraps around to the opposite side of the screen. See instruction 8xy3 for more information on XOR, and section 2.4, Display, for more information on the Chip-8 screen and sprites.
     #[test]
-    fn drw_x_y_n() {}
+    fn drw_x_y_n() {
+        let mut chip = chip!();
+        let data = [0x01, 0x02, 0x03, 0x04];
+        let (x, y) = (5, 10);
+
+        chip.screen.set_collision(true);
+        chip.mem.reg.set(0, x).unwrap();
+        chip.mem.reg.set(1, y).unwrap();
+        chip.mem.ram.load(0x300, &data).unwrap();
+        chip.mem.i = 0x300;
+        chip.exec(0xD014).unwrap();
+
+        assert_eq!(reg!(chip REG_FLAG), 1);
+        assert_eq!(
+            chip.screen.commands,
+            vec![ScreenCommand::Draw {
+                x,
+                y,
+                data: data.to_vec()
+            }]
+        );
+
+        chip.screen.set_collision(false);
+        chip.exec(0xD014).unwrap();
+
+        assert_eq!(reg!(chip REG_FLAG), 0);
+    }
 
     // Ex9E - SKP Vx
     // Skip next instruction if key with the value of Vx is pressed.
     // Checks the keyboard, and if the key corresponding to the value of Vx is currently in the down position, PC is increased by 2.
     #[test]
-    fn skp_x() {}
+    fn skp_x() {
+        let mut chip = chip!(keys = [Some(1), Some(2)]);
+
+        chip.mem.reg.set(0, 1).unwrap();
+        chip.exec(0xE09E).unwrap();
+
+        assert_eq!(chip.mem.pc, 2 * INST_STEP);
+
+        chip.mem.pc = 0;
+        chip.exec(0xE09E).unwrap();
+        assert_eq!(chip.mem.pc, INST_STEP);
+    }
 
     // ExA1 - SKNP Vx
     // Skip next instruction if key with the value of Vx is not pressed.
     // Checks the keyboard, and if the key corresponding to the value of Vx is currently in the up position, PC is increased by 2.
     #[test]
-    fn sknp_x() {}
+    fn sknp_x() {
+        let mut chip = chip!(keys = [Some(1), Some(2)]);
+
+        chip.mem.reg.set(0, 1).unwrap();
+        chip.exec(0xE0A1).unwrap();
+
+        assert_eq!(chip.mem.pc, INST_STEP);
+
+        chip.mem.pc = 0;
+        chip.exec(0xE0A1).unwrap();
+        assert_eq!(chip.mem.pc, 2 * INST_STEP);
+    }
 
     // Fx07 - LD Vx, DT
     // Set Vx = delay timer value.
     // The value of DT is placed into Vx.
     #[test]
-    fn ld_x_dt() {}
+    fn ld_x_dt() {
+        let mut chip = chip!();
+
+        chip.mem.dt = 123;
+        chip.exec(0xF007).unwrap();
+        assert_eq!(reg!(chip 0), 123);
+    }
 
     // Fx0A - LD Vx, K
     // Wait for a key press, store the value of the key in Vx.
     // All execution stops until a key is pressed, then the value of that key is stored in Vx.
     #[test]
-    fn ld_x_key() {}
+    fn ld_x_key() {
+        let mut chip = chip!(keys = [None, None, Some(1)]);
+
+        chip.exec(0xF00A).unwrap();
+        assert_eq!(reg!(chip 0), 1);
+    }
 
     // Fx15 - LD DT, Vx
     // Set delay timer = Vx.
     // DT is set equal to the value of Vx.
     #[test]
-    fn ld_dt_x() {}
+    fn ld_dt_x() {
+        let mut chip = reg!(0 = 123);
+
+        chip.exec(0xF015).unwrap();
+        assert_eq!(chip.mem.dt, 123);
+    }
 
     // Fx18 - LD ST, Vx
     // Set sound timer = Vx.
     // ST is set equal to the value of Vx.
     #[test]
-    fn ld_st_x() {}
+    fn ld_st_x() {
+        let mut chip = reg!(0 = 123);
+
+        chip.exec(0xF018).unwrap();
+        assert_eq!(chip.mem.st, 123);
+    }
 
     // Fx1E - ADD I, Vx
     // Set I = I + Vx.
     // The values of I and Vx are added, and the results are stored in I.
     #[test]
-    fn add_i_x() {}
+    fn add_i_x() {
+        let mut chip = reg!(0 = 0x03);
+
+        chip.mem.i = 0x120;
+        chip.exec(0xF01E).unwrap();
+        assert_eq!(chip.mem.i, 0x123);
+    }
 
     // Fx29 - LD F, Vx
     // Set I = location of sprite for digit Vx.
     // The value of I is set to the location for the hexadecimal sprite corresponding to the value of Vx. See section 2.4, Display, for more information on the Chip-8 hexadecimal font.
     #[test]
-    fn ld_sprite_x() {}
+    fn ld_sprite_x() {
+        let mut chip = reg!(0 = 0, 1 = 0xF);
+        let s0 = chip.mem.ram.get_sprite_addr(0).unwrap();
+        let sf = chip.mem.ram.get_sprite_addr(0xF).unwrap();
+
+        chip.exec(0xF029).unwrap();
+        assert_eq!(chip.mem.i, s0);
+
+        chip.exec(0xF129).unwrap();
+        assert_eq!(chip.mem.i, sf);
+    }
 
     // Fx33 - LD B, Vx
     // Store BCD representation of Vx in memory locations I, I+1, and I+2.
     // The interpreter takes the decimal value of Vx, and places the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.
     #[test]
-    fn ld_bcd_x() {}
+    fn ld_bcd_x() {
+        let mut chip = reg!(0 = 123);
+
+        chip.mem.i = 0x300;
+        chip.exec(0xF033).unwrap();
+        assert_eq!(chip.mem.ram.read_bytes(0x300, 3).unwrap(), &[1, 2, 3]);
+    }
 
     // Fx55 - LD [I], Vx
     // Store registers V0 through Vx in memory starting at location I.
     // The interpreter copies the values of registers V0 through Vx into memory, starting at the address in I.
     #[test]
-    fn ld_i_x() {}
+    fn ld_i_x() {
+        let mut chip = chip!();
+
+        for vx in 0..16 {
+            chip.mem.reg.set(vx, vx + 1).unwrap();
+        }
+
+        chip.mem.i = 0x300;
+        chip.exec(0xFF55).unwrap();
+        assert_eq!(
+            chip.mem.ram.read_bytes(0x300, 16).unwrap(),
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        );
+
+        chip.mem.i = 0x400;
+        chip.exec(0xF755).unwrap();
+        assert_eq!(
+            chip.mem.ram.read_bytes(0x400, 16).unwrap(),
+            [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0]
+        )
+    }
 
     // Fx65 - LD Vx, [I]
     // Read registers V0 through Vx from memory starting at location I.
     // The interpreter reads values from memory starting at location I into registers V0 through Vx.
     #[test]
-    fn ld_x_i() {}
+    fn ld_x_i() {
+        let mut chip = chip!();
+        let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+
+        chip.mem.ram.load(0x300, &data).unwrap();
+        chip.mem.i = 0x300;
+        chip.exec(0xFF65).unwrap();
+
+        for vx in 0..16 {
+            assert_eq!(reg!(chip vx), data[vx as usize]);
+        }
+
+        chip.mem.i = 0x308;
+        chip.exec(0xF765).unwrap();
+
+        for vx in 0..16 {
+            assert_eq!(reg!(chip vx), (vx % 8) + 9);
+        }
+    }
 }
