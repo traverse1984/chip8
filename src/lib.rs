@@ -1,4 +1,7 @@
 #![no_std]
 
 pub mod hal;
-mod vm;
+
+pub mod vm;
+
+pub use vm::Program;

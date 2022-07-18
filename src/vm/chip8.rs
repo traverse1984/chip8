@@ -31,11 +31,9 @@ where
     R: Rng,
     D: Delay,
 {
-    fn load<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Result<(), ()> {
-        self.mem
-            .ram
-            .load(0x200, program.into().as_bytes())
-            .map_err(|_| ())
+    fn load<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Status {
+        let program: Program = program.into();
+        program.copy_to(&mut self.mem.ram)
     }
 
     fn run(&mut self) -> Status {
