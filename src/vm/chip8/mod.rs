@@ -1,5 +1,8 @@
 pub mod mem;
 
+mod timer;
+use timer::Timer;
+
 use mem::{Mem, Ram};
 
 use super::error::{Error, Result};
@@ -55,14 +58,32 @@ where
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result {
-        loop {
-            self.step()?;
-        }
-    }
-
     pub fn step(&mut self) -> Result {
         self.read_inst(self.mem.pc).and_then(|inst| self.exec(inst))
+    }
+
+    pub fn run(&mut self, hz: u32) -> Result {
+        let tick = if hz >= 60 {
+            Timer::hertz_to_us(hz).ok_or(Error::ClockSpeed(hz))
+        } else {
+            Err(Error::ClockSpeed(hz))
+        }?;
+
+        let mut dt = Timer::new(60).unwrap();
+        let mut st = Timer::new(60).unwrap();
+
+        loop {
+            if dt.update(self.mem.dt > 0, tick) {
+                self.mem.dt -= 1;
+            }
+
+            if st.update(self.mem.st > 0, tick) {
+                self.mem.st -= 1;
+            }
+
+            self.step()?;
+            self.delay.delay_us(tick).map_err(|e| e.into())?;
+        }
     }
 
     fn read_inst(&mut self, addr: u16) -> Result<u16> {
@@ -228,7 +249,6 @@ where
             0xF if byte == 0x07 => set!(*dt),
 
             // LD Vx, K
-            // All execution means what? Also stop secrementing timers?
             0xF if byte == 0x0A => {
                 let key = loop {
                     if let Some(key) = Self::read_key(&mut self.keypad, &mut self.delay)? {

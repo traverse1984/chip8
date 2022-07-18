@@ -9,6 +9,7 @@ pub enum Error {
     Memory(mem::Error),
     NotAligned(u16),
     Instruction(u16),
+    ClockSpeed(u32),
 }
 
 impl From<hal::Error> for Error {
