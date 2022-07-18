@@ -1,17 +1,23 @@
 use super::{Error, Result};
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone)]
 pub struct Stack {
     sp: u8,
     frames: [u16; 16],
 }
 
-impl Stack {
-    pub fn new() -> Self {
+impl Default for Stack {
+    fn default() -> Self {
         Self {
             sp: 0xFF,
             frames: [0; 16],
         }
+    }
+}
+
+impl Stack {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn push(&mut self, frame: u16) -> Result {

@@ -1,16 +1,37 @@
 #[macro_export]
-macro_rules! chip8_prog {
-    ( $( $fn: ident $($reg: expr),* ; )+ ) => {
+macro_rules! chip8_asm {
+
+    ( @output $( $fn: ident $($reg: expr),* ; )+ ) => {
         [ $( chip8_inst!( $fn $($reg),* ) ),+ ]
+    };
+
+    ( @mut $($tail: tt)* ) => {
+        &mut chip8_asm!( @output $($tail)* )[..]
+    };
+
+    ( output; $($tail: tt)* ) => {
+        chip8_asm!( @output $($tail)* )
+    };
+
+    ( $($tail: tt)* ) => {
+        chip8_asm!( @mut $($tail)* )
     };
 }
 
 macro_rules! instruction_set {
-    (($d: tt); $($mask: literal $name: ident $($varname: ident),*;)+) => {
+    (
+        ($d: tt);
+        $(
+            $mask: literal
+            $name: ident
+            $($varname: ident),*
+            ;
+        )+
+    ) => {
         #[macro_export]
         macro_rules! chip8_inst {
             $(
-                ($name $($d $varname: expr),*) => {
+                ( $name $($d $varname: expr),* ) => {
                     $crate::__chip8_inst!($mask $($varname $d $varname),*)
                 };
             )+
@@ -58,34 +79,36 @@ instruction_set! {
 
 #[macro_export]
 macro_rules! __chip8_inst {
-    ($mask: literal $( $($reg: ident $val: expr),+ )?) => {
+    (
+        $mask: literal
+        $( $($reg: ident $val: expr),+ )?
+    ) => {
         ($mask as u16) $(| $($crate::__chip8_inst!($reg $val))|* )?
     };
 
-    (vx $vx: expr) => {
+    ( vx $vx: expr ) => {
         (($vx as u16) << 8)
     };
 
-    (vy $vy: expr) => {
+    ( vy $vy: expr ) => {
         (($vy as u16) << 4)
     };
 
-    (nnn $nnn: expr) => {
+    ( nnn $nnn: expr ) => {
         ($nnn as u16)
     };
 
-    (kk $kk: expr) => {
+    ( kk $kk: expr ) => {
         ($kk as u16)
     };
 
-    (n $n: expr) => {
+    ( n $n: expr ) => {
         ($n as u16)
     };
 }
 
+#[cfg(test)]
 mod tests {
-    use crate::vm::mem::Ram;
-
     #[test]
     fn registers() {
         assert_eq!(__chip8_inst!(0x1234), 0x1234);
@@ -134,7 +157,7 @@ mod tests {
 
     #[test]
     fn program() {
-        let prog = chip8_prog! {
+        let prog = chip8_asm! {
             cls;
             jp 0x123;
             call 0x234;
