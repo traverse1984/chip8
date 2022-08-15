@@ -5,6 +5,7 @@ use crate::hal::{chip, ScreenCommand};
 use crate::vm::chip8::mem;
 use std::vec;
 
+/// Set multiple registers of a new chip8 mock, or read a single register.
 macro_rules! reg {
     ($($reg: literal = $val: literal),+) => {{
         let mut chip = chip!();

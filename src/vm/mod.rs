@@ -1,7 +1,5 @@
 mod chip8;
 
-pub mod parser;
-
 mod error;
 mod program;
 
