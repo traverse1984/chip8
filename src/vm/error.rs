@@ -1,6 +1,4 @@
-use super::chip8::mem;
-use crate::hal;
-
+use crate::{hal, vm::mem};
 pub type Result<T = ()> = core::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

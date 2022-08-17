@@ -1,7 +1,6 @@
 mod chip8;
 
 mod error;
-mod program;
 
+pub mod mem;
 pub use self::chip8::Chip8;
-pub use program::Program;

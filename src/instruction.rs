@@ -6,15 +6,10 @@ macro_rules! chip8_asm {
 }
 
 macro_rules! instruction_set {
-    (
-        $(
-            $doc: expr;
-            $name: ident
-            $($varname: ident),*
-            ->
-            $mask: literal;
-        )+
-    ) => {
+    ( $(
+        $doc: expr;
+        $name: ident  $($varname: ident),* -> $mask: literal;
+    )+ ) => {
         $(chip8_fn!($doc; $name $($varname),* -> $mask);)+
     };
 }

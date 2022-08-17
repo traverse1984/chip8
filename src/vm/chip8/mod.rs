@@ -1,12 +1,9 @@
-pub mod mem;
-
 mod timer;
 use timer::Timer;
 
-use mem::{Mem, Ram};
+use crate::vm::mem::{Load, Mem, Ram, SPRITES};
 
 use super::error::{Error, Result};
-use super::program::Program;
 use crate::hal::{Buzzer, Delay, Keypad, Rng, Screen};
 
 #[cfg(test)]
@@ -40,18 +37,18 @@ where
     R: Rng,
     D: Delay,
 {
-    pub fn main<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Result<u16> {
-        self.sub(0x200, program)
-    }
+    // pub fn main<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Result<u16> {
+    //     self.sub(0x200, program)
+    // }
 
-    pub fn sub<'a, P: Into<Program<'a>>>(&mut self, addr: u16, program: P) -> Result<u16> {
-        self.data(addr, program.into().bytes())
-    }
+    // pub fn sub<'a, P: Into<Program<'a>>>(&mut self, addr: u16, program: P) -> Result<u16> {
+    //     self.data(addr, program.into().bytes())
+    // }
 
-    pub fn data(&mut self, addr: u16, data: &[u8]) -> Result<u16> {
-        self.mem.ram.load(addr, data)?;
-        Ok(addr)
-    }
+    // pub fn data(&mut self, addr: u16, data: &[u8]) -> Result<u16> {
+    //     self.mem.ram.load(addr, data)?;
+    //     Ok(addr)
+    // }
 
     pub fn init(&mut self) -> Result {
         self.mem.pc = 0x200;
@@ -271,7 +268,7 @@ where
             0xF if byte == 0x1E => *i = i.wrapping_add(vx as u16),
 
             // LD F, Vx
-            0xF if byte == 0x29 => *i = ram.get_sprite_addr(vx)?,
+            0xF if byte == 0x29 => *i = ram.to_sprite_addr(vx)?,
 
             // LD B, Vx
             0xF if byte == 0x33 => {
