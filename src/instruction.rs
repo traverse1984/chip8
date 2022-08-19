@@ -11,6 +11,122 @@ macro_rules! instruction_set {
         $name: ident  $($varname: ident),* -> $mask: literal;
     )+ ) => {
         $(chip8_fn!($doc; $name $($varname),* -> $mask);)+
+
+        /// Reverse a chip8 instruction
+        /// This doesnt work, some rules needed for each
+        /// call type.
+        pub fn reverse_inst(inst: u16) -> (&'static str, DecodedInstruction) {
+            let invert = [
+                $(($mask, stringify!($name), chip8_rev!($($varname),*))),+
+            ];
+
+            for (mask, name, instruction) in invert {
+                let decoded = instruction.decode(mask, inst);
+                if decoded.is_some() {
+                    return (name, decoded.unwrap());
+                }
+            }
+
+            ("unknown", DecodedInstruction::Unknown(inst))
+        }
+    };
+}
+
+pub enum Instruction {
+    Exact,
+    Addr,
+    Vx,
+    VxVy,
+    VxByte,
+    VxVyNibble,
+}
+
+pub enum DecodedInstruction {
+    Exact,
+    Addr(u16),
+    Vx(u8),
+    VxVy(u8, u8),
+    VxByte(u8, u8),
+    VxVyNibble(u8, u8, u8),
+    Unknown(u16),
+}
+
+impl DecodedInstruction {
+    pub fn to_string(self, name: &'static str) -> String {
+        use DecodedInstruction::*;
+        match self {
+            Exact => name.to_string(),
+            Addr(addr) => format!("{} 0x{:03X}", name, addr),
+            Vx(vx) => format!("{} {:X}", name, vx),
+            VxVy(vx, vy) => format!("{} {:X}, {:X}", name, vx, vy),
+            VxByte(vx, byte) => format!("{} {:X}, 0x{:02X}", name, vx, byte),
+            VxVyNibble(vx, vy, nibble) => format!("{} {:X}, {:X}, {:X}", name, vx, vy, nibble),
+            Unknown(raw) => format!("{} (0x{:04X})", name, raw),
+        }
+    }
+}
+
+impl Instruction {
+    fn decode(&self, mask: u16, inst: u16) -> Option<DecodedInstruction> {
+        use Instruction::*;
+        match self {
+            Exact if mask == inst => Some(DecodedInstruction::Exact),
+            Addr if inst & 0xF000 == mask => Some(DecodedInstruction::Addr(inst & 0x0FFF)),
+            VxByte if inst & 0xF000 == mask => {
+                let [msb, lsb] = inst.to_be_bytes();
+                Some(DecodedInstruction::VxByte(msb & 0x0F, lsb))
+            }
+            VxVyNibble if inst & 0xF000 == mask => {
+                let [msb, lsb] = inst.to_be_bytes();
+                Some(DecodedInstruction::VxVyNibble(
+                    msb & 0x0F,
+                    (lsb & 0xF0) >> 4,
+                    lsb & 0xF,
+                ))
+            }
+            VxVy if inst & 0xF00F == mask => {
+                let [msb, lsb] = inst.to_be_bytes();
+                Some(DecodedInstruction::VxVy(msb & 0xF, (lsb & 0xF0) >> 4))
+            }
+            Vx if inst & 0xF0FF == mask => Some(DecodedInstruction::Vx(((inst >> 8) & 0xF) as u8)),
+            _ => None,
+        }
+    }
+
+    fn cmp(&self, mask: u16, inst: u16) -> bool {
+        use Instruction::*;
+        match self {
+            Exact => mask == inst,
+            Addr | VxByte | VxVyNibble => inst & 0xF000 == mask,
+            VxVy => inst & 0xF00F == mask,
+            Vx => inst & 0xF0FF == mask,
+        }
+    }
+}
+
+macro_rules! chip8_rev {
+    () => {
+        Instruction::Exact
+    };
+
+    (addr) => {
+        Instruction::Addr
+    };
+
+    (vx) => {
+        Instruction::Vx
+    };
+
+    (vx, vy) => {
+        Instruction::VxVy
+    };
+
+    (vx, byte) => {
+        Instruction::VxByte
+    };
+
+    (vx, vy, nibble) => {
+        Instruction::VxVyNibble
     };
 }
 

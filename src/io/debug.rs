@@ -1,3 +1,4 @@
+use crate::instruction;
 use crate::io::{Screen, Viewport};
 use crate::vm::mem::Mem;
 
@@ -53,15 +54,26 @@ pub fn draw_registers<V: Viewport>(mem: Mem, screen: &mut Screen<V>) {
     }
 
     print("");
+    print("[INSTRUCTION]");
+
+    let inst = mem.ram.read_bytes(mem.pc, 2).unwrap();
+    let inst = u16::from_be_bytes([inst[0], inst[1]]);
+    let (name, decoded) = instruction::reverse_inst(inst);
+    print(&decoded.to_string(name));
+
+    print("");
     print("[STACK]");
 
     let mut stack = mem.stack;
-    loop {
+    for _ in 0..16 {
         if let Ok(frame) = stack.pop() {
             print(&format!("0x{:04X}", frame));
         } else {
-            print("<empty>   ");
-            break;
+            print("      ");
         }
+    }
+
+    if stack.depth() == 0 {
+        print("<empty>");
     }
 }

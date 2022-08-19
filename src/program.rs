@@ -1,5 +1,6 @@
 use crate::chip8_asm;
 extern crate std;
+use super::instruction;
 use crate::vm::mem::{Error, Load, Ram, Result};
 use std::{dbg, print, println};
 
@@ -54,6 +55,10 @@ impl<const LEN: usize> Default for Refs<LEN> {
 impl<const LEN: usize> Refs<LEN> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn peek_next_id(&self) -> u16 {
+        self.index as u16
     }
 
     pub fn create(&mut self, new_ref: Ref) -> Result<u16> {
@@ -170,6 +175,16 @@ impl Program {
     {
         let sub_ref = self.load_program_data(program)?;
         self.subs.create(sub_ref)
+    }
+
+    pub fn repeat<T>(&mut self, program: &[T]) -> Result<u16>
+    where
+        Self: Load<T> + Load<u16>,
+    {
+        let Ref { addr, len } = self.load_program_data(program)?;
+        let next_ref = self.subs.peek_next_id();
+        let jp_ref = self.load_to_tmp(&[instruction::jp(next_ref)])?;
+        self.subs.create(Ref::new(addr, len + jp_ref.len))
     }
 
     pub fn data(&mut self, data: &[u8]) -> Result<u16> {

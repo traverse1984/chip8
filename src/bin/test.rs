@@ -26,25 +26,21 @@ fn main() -> Result<(), chip8::vm::mem::Error> {
        ret;
     })?;
 
-    let init = prog.sub(&chip8_asm! {
-          ld 3, 2; // y
-          ld 4, 2; // x0
-          ld 5, 8; // x1
-          ld 6, 14; // x2
-          ld 8, 1; // Counter
-          call update;
-          jp 0x202;
+    let looper = prog.repeat(&chip8_asm! {
+        ldkey 9;
+        addv 8, 9;
+        sev 8, 10;
+        call update;
     })?;
 
     prog.main(&chip8_asm! {
-       jp init;
-
-       ldkey 9;
-       addv 8, 9;
-       sev 8, 10;
-       call update;
-
-       jp 0x202;
+        ld 3, 2; // y
+        ld 4, 2; // x0
+        ld 5, 8; // x1
+        ld 6, 14; // x2
+        ld 8, 1; // Counter
+        call update;
+        call looper;
     })?;
 
     let prog = prog.compile()?;
@@ -62,8 +58,9 @@ fn main() -> Result<(), chip8::vm::mem::Error> {
     loop {
         debug::draw_frame(chip.screen());
         debug::draw_registers(*chip.state(), chip.screen());
+        chip.screen().flush();
 
         chip.step().unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::thread::sleep(std::time::Duration::from_millis(200));
     }
 }
