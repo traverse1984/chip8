@@ -50,9 +50,18 @@ where
     //     Ok(addr)
     // }
 
-    pub fn init(&mut self) -> Result {
+    pub fn screen(&mut self) -> &mut S {
+        &mut self.screen
+    }
+
+    pub fn load(mut self, ram: Ram) -> Self {
+        self.mem = Mem::from(ram);
+        self.init();
+        self
+    }
+
+    pub fn init(&mut self) {
         self.mem.pc = 0x200;
-        Ok(())
     }
 
     pub fn step(&mut self) -> Result {
@@ -151,7 +160,7 @@ where
             0 if addr == 0x0E0 => self.screen.clear().map_err(|e| e.into())?,
 
             // RET
-            0 if addr == 0x0EE => jump!(stack.pop()?),
+            0 if addr == 0x0EE => jump!(stack.pop()? + 2),
 
             // JP addr
             1 => jump!(addr),
@@ -226,7 +235,7 @@ where
 
             // // DRW Vx, Vy, len
             0xD => {
-                let data = ram.read_bytes(*i, nibble)?;
+                let data = ram.read_bytes(*i, nibble as u16)?;
                 let erased = self.screen.draw(vx, vy, data).map_err(|e| e.into())?;
                 set!(vf = erased as u8);
             }
@@ -287,7 +296,11 @@ where
 
             // Ld Vx, [I]
             0xF if byte == 0x65 => {
-                for (&val, loc) in ram.read_bytes(*i, vx_addr + 1)?.iter().zip(0..=vx_addr) {
+                for (&val, loc) in ram
+                    .read_bytes(*i, vx_addr as u16 + 1)?
+                    .iter()
+                    .zip(0..=vx_addr)
+                {
                     reg.set(loc, val)?;
                 }
             }

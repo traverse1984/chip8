@@ -20,6 +20,10 @@ impl Stack {
         Self::default()
     }
 
+    pub fn depth(&self) -> usize {
+        self.sp as usize + 1
+    }
+
     pub fn push(&mut self, frame: u16) -> Result {
         match self.sp {
             0..=14 | 0xFF => {

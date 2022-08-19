@@ -5,7 +5,7 @@ pub type Result<T = ()> = core::result::Result<T, Error>;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Error {
     InvalidAddress { addr: u16 },
-    InvalidSlice { addr: u16, len: u8 },
+    InvalidSlice { addr: u16, len: u16 },
     InvalidSprite { sprite: u8 },
     InvalidRegister { reg: u8 },
     NotWritable { addr: u16 },
@@ -31,4 +31,13 @@ pub struct Mem {
     // Usually mem addr
     pub ram: Ram,
     // Stack
+}
+
+impl From<Ram> for Mem {
+    fn from(ram: Ram) -> Self {
+        Mem {
+            ram,
+            ..Default::default()
+        }
+    }
 }

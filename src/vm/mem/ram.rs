@@ -1,7 +1,7 @@
 use super::{sprites::SPRITES, Error, Result};
 
 pub trait Load<T> {
-    fn load(&mut self, addr: u16, words: &[T]) -> Result<usize>;
+    fn load(&mut self, addr: u16, words: &[T]) -> Result<u16>;
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -20,7 +20,7 @@ impl Default for Ram {
 }
 
 impl Load<u8> for Ram {
-    fn load(&mut self, addr: u16, bytes: &[u8]) -> Result<usize> {
+    fn load(&mut self, addr: u16, bytes: &[u8]) -> Result<u16> {
         let index = self.to_read_addr(addr)? as usize;
 
         if bytes.len() > 4096 - index {
@@ -33,12 +33,12 @@ impl Load<u8> for Ram {
         let target = &mut self.mem[index..index + bytes.len()];
         target.copy_from_slice(&bytes);
 
-        Ok(bytes.len())
+        Ok(bytes.len() as u16)
     }
 }
 
 impl Load<u16> for Ram {
-    fn load(&mut self, addr: u16, words: &[u16]) -> Result<usize> {
+    fn load(&mut self, addr: u16, words: &[u16]) -> Result<u16> {
         let mut index = self.to_read_addr(addr)? as usize;
 
         if words.len() * 2 > 4096 - index {
@@ -54,7 +54,7 @@ impl Load<u16> for Ram {
             index += 2;
         }
 
-        Ok(words.len() * 2)
+        Ok((words.len() * 2) as u16)
     }
 }
 
@@ -81,8 +81,8 @@ impl Ram {
         self.to_read_addr(addr).map(|loc| self.mem[loc as usize])
     }
 
-    pub fn read_bytes(&self, addr: u16, len: u8) -> Result<&[u8]> {
-        match (addr, addr + len as u16) {
+    pub fn read_bytes(&self, addr: u16, len: u16) -> Result<&[u8]> {
+        match (addr, addr + len) {
             (0..=0xFFF, end @ 0..=0xFFF) => Ok(&self.mem[addr as usize..end as usize]),
             _ => Err(Error::InvalidSlice { addr, len }),
         }

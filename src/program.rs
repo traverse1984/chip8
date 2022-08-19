@@ -1,35 +1,10 @@
-use core::ops::Sub;
-
 use crate::chip8_asm;
-
+extern crate std;
 use crate::vm::mem::{Error, Load, Ram, Result};
+use std::{dbg, print, println};
 
-#[derive(Debug, Clone, Copy)]
-pub enum Marker {
-    Reserved,
-    Used,
-    Free,
-    Call(u16),
-    Jp(u16),
-    Jp0(u16),
-    Ldi(u16),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Subroutine<'a> {
-    id: u16,
-    addr: u16,
-    instructions: &'a [u16],
-}
-
-impl<'a> Subroutine<'a> {
-    pub fn new(id: u16, instructions: &'a [u16]) -> Self {
-        Self {
-            id,
-            addr: 4096,
-            instructions,
-        }
-    }
+pub struct CompiledProgram {
+    pub ram: Ram,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -39,109 +14,211 @@ pub struct Var<'a> {
     data: &'a [u8],
 }
 
-#[derive(Debug, Clone)]
-pub struct Program<'a> {
-    ram: Ram,
-    main: &'a [u16],
-    mask: [Marker; 4096],
-    sub: [Option<Subroutine<'a>>; 32],
-    sub_ptr: usize,
-    var: [Option<Var<'a>>; 64],
-    var_ptr: usize,
+#[derive(Debug, Clone, Copy)]
+pub struct Ref {
+    addr: u16,
+    len: u16,
 }
 
-impl<'a> Default for Program<'a> {
-    fn default() -> Self {
-        // let mut mask = [Marker::Free; 4096];
-        // let reserved = &mut mask[0..0x200];
-        // reserved.copy_from_slice(&[Marker::Reserved; 512]);
+impl Ref {
+    fn new(addr: u16, len: u16) -> Self {
+        Self { addr, len }
+    }
 
+    fn is_aligned(&self) -> bool {
+        self.len % 2 == 0
+    }
+
+    fn read_and_update<'a>(&'a mut self, addr: u16, ram: &'a Ram) -> Result<&[u8]> {
+        let bytes = ram.read_bytes(self.addr, self.len);
+        self.addr = addr;
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Refs<const LEN: usize> {
+    index: usize,
+    refs: [Option<Ref>; LEN],
+}
+
+impl<const LEN: usize> Default for Refs<LEN> {
+    fn default() -> Self {
         Self {
-            main: &[],
-            ram: Ram::default(),
-            sub: [None; 32],
-            sub_ptr: 0,
-            var: [None; 64],
-            var_ptr: 32,
-            mask: [Marker::Free; 4096],
+            index: 0,
+            refs: [None; LEN],
         }
     }
 }
 
-impl<'a> Program<'a> {
+impl<const LEN: usize> Refs<LEN> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn main(&mut self, instructions: &'a [u16]) {
-        self.main = instructions;
-    }
-
-    pub fn sub(&mut self, instructions: &'a [u16]) -> Option<u16> {
-        self.sub
-            .get_mut(self.sub_ptr)?
-            .replace(Subroutine::new(self.sub_ptr as u16, instructions));
-
-        let sub_ptr = self.sub_ptr;
-        self.sub_ptr += 1;
-        Some(sub_ptr as u16)
-    }
-
-    pub fn var(&mut self, data: &'a u8) -> Option<u16> {
-        self.data(unsafe { *(data as *const _ as *const &[u8]) })
-    }
-
-    pub fn data(&mut self, data: &'a [u8]) -> Option<u16> {
-        self.var.get_mut(self.var_ptr - 32)?.replace(Var {
-            id: self.var_ptr as u16,
-            addr: 4096,
-            data,
-        });
-
-        let var_ptr = self.var_ptr;
-        self.var_ptr += 1;
-        Some(var_ptr as u16)
-    }
-
-    pub fn compile(&mut self) -> &[u8] {
-        extern crate std;
-        use std::println;
-
-        let mut addr = 0x200;
-        let ram = &mut self.ram;
-
-        addr += ram.load(addr, self.main).unwrap() as u16;
-        for sub in self.sub.iter_mut().flatten() {
-            sub.addr = addr;
-            addr += ram.load(addr, sub.instructions).unwrap() as u16;
+    pub fn create(&mut self, new_ref: Ref) -> Result<u16> {
+        let index = self.index;
+        match self.refs.get_mut(index) {
+            Some(refr) => {
+                refr.replace(new_ref);
+                self.index += 1;
+                Ok(index as u16)
+            }
+            None => Err(Error::StackEmpty),
         }
+    }
+
+    pub fn copy(&mut self, src: &Ram, dest: &mut Ram, addr: &mut u16) -> Result {
+        for refr in self.refs.iter_mut().flatten() {
+            //print!("  * Ref = ({}, {})", refr.addr, refr.len);
+            let bytes = refr.read_and_update(*addr, src)?;
+            //println!(" len={}", bytes.len());
+            *addr += dest.load(*addr, bytes)?;
+        }
+        Ok(())
+    }
+
+    pub fn get(&self, id: u16) -> Result<u16> {
+        match self.refs.get(id as usize) {
+            Some(Some(refr)) => Ok(refr.addr),
+            Some(None) => Err(Error::StackEmpty),
+            None => Err(Error::StackEmpty),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Program {
+    tmp: Ram,
+    addr: u16,
+    main: Option<Ref>,
+    subs: Refs<{ Self::SUBROUTINES }>,
+    vars: Refs<{ Self::VARS }>,
+}
+
+impl Load<u8> for Program {
+    fn load(&mut self, addr: u16, words: &[u8]) -> Result<u16> {
+        self.tmp.load(addr, words)
+    }
+}
+
+impl Load<u16> for Program {
+    fn load(&mut self, addr: u16, words: &[u16]) -> Result<u16> {
+        self.tmp.load(addr, words)
+    }
+}
+
+impl Default for Program {
+    fn default() -> Self {
+        Self {
+            tmp: Ram::new(),
+            addr: 0x200,
+            main: None,
+            subs: Refs::new(),
+            vars: Refs::new(),
+        }
+    }
+}
+
+impl Program {
+    const SUBROUTINES: usize = 32;
+    const VARS: usize = 64;
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn add_addr(&mut self, len: usize) {
+        self.addr += len as u16;
+    }
+
+    fn load_to_tmp<T>(&mut self, data: &[T]) -> Result<Ref>
+    where
+        Self: Load<T>,
+    {
+        let addr = self.addr;
+        let len = self.load(addr, data)?;
+        self.addr += len;
+        Ok(Ref::new(addr, len))
+    }
+
+    fn load_program_data<T>(&mut self, program: &[T]) -> Result<Ref>
+    where
+        Self: Load<T>,
+    {
+        let refr = self.load_to_tmp(program)?;
+
+        if refr.is_aligned() {
+            Ok(refr)
+        } else {
+            Err(Error::StackEmpty)
+        }
+    }
+
+    pub fn main<T>(&mut self, program: &[T]) -> Result
+    where
+        Self: Load<T>,
+    {
+        let main_ref = self.load_program_data(program)?;
+        self.main.replace(main_ref);
+        Ok(())
+    }
+
+    pub fn sub<T>(&mut self, program: &[T]) -> Result<u16>
+    where
+        Self: Load<T>,
+    {
+        let sub_ref = self.load_program_data(program)?;
+        self.subs.create(sub_ref)
+    }
+
+    pub fn data(&mut self, data: &[u8]) -> Result<u16> {
+        let refr = self.load_to_tmp(data)?;
+        let id = self.vars.create(refr)?;
+        Ok(id + Self::SUBROUTINES as u16)
+    }
+
+    pub fn var(&mut self, data: u8) -> Result<u16> {
+        self.data(&[data])
+    }
+
+    pub fn compile(mut self) -> Result<CompiledProgram> {
+        let mut addr = 0x200;
+        let mut ram = Ram::new();
+
+        let mut main = self.main.ok_or(Error::StackEmpty)?;
+        let main = main.read_and_update(0x200, &self.tmp)?;
+        addr += ram.load(addr, main)?;
+
+        //println!("Add subroutines at {addr}");
+        self.subs.copy(&self.tmp, &mut ram, &mut addr)?;
 
         let last_inst = addr;
+        //println!("Last instruction at {last_inst}");
 
-        for var in self.var.iter_mut().flatten() {
-            var.addr = addr;
-            addr += ram.load(addr, var.data).unwrap() as u16;
-        }
+        //println!("Add vars at {addr}");
+        self.vars.copy(&self.tmp, &mut ram, &mut addr)?;
 
         for addr in (0x200..last_inst).filter(|idx| idx % 2 == 0) {
-            match ram.read_bytes(addr, 2).unwrap() {
-                [i @ 0x10 | i @ 0x20 | i @ 0xA0 | i @ 0xB0, id @ 0..=95] => {
-                    let id = *id as usize;
-                    let [msb, lsb] = if id < 32 {
-                        self.sub[id].unwrap().addr
+            match ram.read_bytes(addr, 2)? {
+                &[inst @ (0x10 | 0x20 | 0xA0 | 0xB0), id]
+                    if id < (Self::SUBROUTINES + Self::VARS) as u8 =>
+                {
+                    let refr = if id < Self::SUBROUTINES as u8 {
+                        self.subs.get(id as u16)
                     } else {
-                        self.var[id - 32].unwrap().addr
-                    }
-                    .to_be_bytes();
+                        let adjusted_id = id - Self::SUBROUTINES as u8;
+                        self.vars.get(adjusted_id as u16)
+                    };
 
-                    let i = *i;
-                    ram.write_bytes(addr, &[i | msb, lsb]).unwrap()
+                    let [msb, lsb] = refr?.to_be_bytes();
+                    ram.write_bytes(addr, &[inst | msb, lsb])?;
                 }
                 _ => continue,
             }
         }
 
-        ram.read_bytes(0x200, 32).unwrap()
+        Ok(CompiledProgram { ram })
     }
 }
 
@@ -157,20 +234,36 @@ mod tests {
         let sub_inst = chip8_asm! {
             ld 2, 22;
             add 3, 1;
+            ret;
         };
 
         let sub = program.sub(&sub_inst).unwrap();
         let data = program.data(&[1, 2, 3, 4]).unwrap();
 
-        println!("sub={sub}, data={data}");
+        let prog = [0x1234u16, 0x2345, 0x3456, 0x4567];
 
         let prog = chip8_asm! {
             call sub;
             ldi data;
+            add 1, 2;
+            add 3, 4;
         };
 
-        program.main(&prog);
+        program.main(&prog).unwrap();
 
-        dbg!(program.compile());
+        let prog = program.compile().unwrap();
+
+        let prog = prog.ram.read_bytes(0x200, 32).unwrap();
+        hexdump(prog);
     }
+}
+
+pub fn hexdump(byt: &[u8]) {
+    for (i, b) in byt.iter().enumerate() {
+        if i % 8 == 0 {
+            //println!("");
+        }
+        //print!("{:02x} ", b);
+    }
+    //println!("\n");
 }
