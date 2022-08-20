@@ -60,7 +60,9 @@ impl DecodedInstruction {
             Vx(vx) => format!("{} {:X}", name, vx),
             VxVy(vx, vy) => format!("{} {:X}, {:X}", name, vx, vy),
             VxByte(vx, byte) => format!("{} {:X}, 0x{:02X}", name, vx, byte),
-            VxVyNibble(vx, vy, nibble) => format!("{} {:X}, {:X}, {:X}", name, vx, vy, nibble),
+            VxVyNibble(vx, vy, nibble) => {
+                format!("{} {:X}, {:X}, {:X}", name, vx, vy, nibble)
+            }
             Unknown(raw) => format!("{} (0x{:04X})", name, raw),
         }
     }

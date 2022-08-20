@@ -59,7 +59,8 @@ pub fn draw_registers<V: Viewport>(mem: Mem, screen: &mut Screen<V>) {
     let inst = mem.ram.read_bytes(mem.pc, 2).unwrap();
     let inst = u16::from_be_bytes([inst[0], inst[1]]);
     let (name, decoded) = instruction::reverse_inst(inst);
-    print(&decoded.to_string(name));
+
+    print(&format!("{:<16}", decoded.to_string(name)));
 
     print("");
     print("[STACK]");

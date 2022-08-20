@@ -61,6 +61,6 @@ fn main() -> Result<(), chip8::vm::mem::Error> {
         chip.screen().flush();
 
         chip.step().unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(1000));
     }
 }
