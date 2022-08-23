@@ -1,6 +1,6 @@
 use crate::chip8_asm;
 extern crate std;
-use super::instruction;
+use super::instruction::ops;
 use crate::vm::mem::{Error, Load, Ram, Result};
 use std::{dbg, print, println};
 
@@ -183,7 +183,7 @@ impl Program {
     {
         let Ref { addr, len } = self.load_program_data(program)?;
         let next_ref = self.subs.peek_next_id();
-        let jp_ref = self.load_to_tmp(&[instruction::jp(next_ref)])?;
+        let jp_ref = self.load_to_tmp(&[ops::jp(next_ref)])?;
         self.subs.create(Ref::new(addr, len + jp_ref.len))
     }
 
