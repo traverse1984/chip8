@@ -6,7 +6,7 @@ use crate::vm::mem::{Load, Mem, Ram, SPRITES};
 use super::error::{Error, Result};
 use crate::hal::{Buzzer, Delay, Keypad, Rng, Screen};
 
-use crate::inst::Instruction;
+use crate::inst::Opcode;
 
 #[cfg(test)]
 mod tests;
@@ -157,107 +157,56 @@ where
             }};
         }
 
-        match cmd {
-            // CLS
-            0 if addr == 0x0E0 => self.screen.clear().map_err(|e| e.into())?,
+        let opcode = match Opcode::decode(instruction) {
+            Some(opcode) => opcode,
+            None => return Err(Error::Instruction(instruction)),
+        };
 
-            // RET
-            0 if addr == 0x0EE => jump!(stack.pop()? + 2),
-
-            // JP addr
-            1 => jump!(addr),
-
-            // CALL addr
-            2 => {
+        use Opcode::*;
+        match opcode {
+            Cls => self.screen.clear().map_err(|e| e.into())?,
+            Ret => jump!(stack.pop()? + 2),
+            Jp => jump!(addr),
+            Call => {
                 stack.push(*pc)?;
                 jump!(addr);
             }
-
-            // SE Vx, byte
-            3 => skip!(vx == byte),
-
-            // SNE Vx, byte
-            4 => skip!(vx != byte),
-
-            // // SE Vx, Vy, 0
-            5 if nibble == 0 => skip!(vx == vy),
-
-            // // LD Vx, byte
-            6 => set!(byte),
-
-            // // ADD Vx, byte
-            7 => set!(byte.wrapping_add(vx)),
-
-            // // XOR
-            8 => match nibble {
-                // LD Vx, Vy
-                0 => set!(vy),
-
-                // OR Vx, Vy
-                1 => set!(vx | vy),
-
-                // AND Vx, Vy
-                2 => set!(vx & vy),
-
-                // XOR Vx, Vy
-                3 => set!(vx ^ vy),
-
-                // ADD Vx, Vy
-                4 => match vx.checked_add(vy) {
-                    Some(val) => set!(val, vf = 0),
-                    None => set!(vx.wrapping_add(vy), vf = 1),
-                },
-
-                // SUB Vx, Vy
-                5 => set!(vx.wrapping_sub(vy), vf = (vx > vy) as u8),
-
-                // SHR Vx (, Vy)
-                6 => set!(vx >> 1, vf = vx & 1),
-
-                // SUBN Vx, Vy
-                7 => set!(vy.wrapping_sub(vx), vf = (vy > vx) as u8),
-
-                // SHL Vx (, Vy)
-                0xE => set!(vx << 1, vf = vx >> 7),
-
-                _ => return Err(Error::Instruction(instruction)),
+            Se => skip!(vx == byte),
+            Sne => skip!(vx != byte),
+            Sev => skip!(vx == vy),
+            Ld => set!(byte),
+            Add => set!(byte.wrapping_add(vx)),
+            Ldv => set!(vy),
+            Or => set!(vx | vy),
+            And => set!(vx & vy),
+            Xor => set!(vx ^ vy),
+            Addv => match vx.checked_add(vy) {
+                Some(val) => set!(val, vf = 0),
+                None => set!(vx.wrapping_add(vy), vf = 1),
             },
-
-            // // SNE
-            9 if nibble == 0 => skip!(vx != vy),
-
-            // // LD I, addr
-            0xA => *i = addr,
-
-            // // JP V0, addr
-            0xB => jump!(addr + reg.get(0)? as u16),
-
-            // // RND Vx, byte
-            0xC => set!(byte & self.rng.random().map_err(|e| e.into())?),
-
-            // // DRW Vx, Vy, len
-            0xD => {
+            Sub => set!(vx.wrapping_sub(vy), vf = (vx > vy) as u8),
+            Shr => set!(vx >> 1, vf = vx & 1),
+            Subn => set!(vy.wrapping_sub(vx), vf = (vy > vx) as u8),
+            Shl => set!(vx << 1, vf = vx >> 7),
+            Snev => skip!(vx != vy),
+            Ldi => *i = addr,
+            Jp0 => jump!(addr + reg.get(0)? as u16),
+            Rnd => set!(byte & self.rng.random().map_err(|e| e.into())?),
+            Drw => {
                 let data = ram.read_bytes(*i, nibble as u16)?;
                 let erased = self.screen.draw(vx, vy, data).map_err(|e| e.into())?;
                 set!(vf = erased as u8);
             }
-
-            // // SKP Vx
-            0xE if byte == 0x9E => match Self::read_key(&mut self.keypad, &mut self.delay)? {
+            Skp => match Self::read_key(&mut self.keypad, &mut self.delay)? {
                 Some(key) => skip!(key == vx),
                 _ => (),
             },
-
-            // // SKNP Vx
-            0xE if byte == 0xA1 => match Self::read_key(&mut self.keypad, &mut &mut self.delay)? {
+            Sknp => match Self::read_key(&mut self.keypad, &mut &mut self.delay)? {
                 Some(key) => skip!(key != vx),
                 _ => (),
             },
-
-            0xF if byte == 0x07 => set!(*dt),
-
-            // LD Vx, K
-            0xF if byte == 0x0A => {
+            Lddtv => set!(*dt),
+            Ldkey => {
                 let key = loop {
                     if let Some(key) = Self::read_key(&mut self.keypad, &mut self.delay)? {
                         break key;
@@ -268,36 +217,22 @@ where
 
                 set!(key);
             }
-
-            // LD DT, Vx
-            0xF if byte == 0x15 => *dt = vx,
-
-            // LD ST, Vx
-            0xF if byte == 0x18 => *st = vx,
-
-            // ADD I, Vx
-            0xF if byte == 0x1E => *i = i.wrapping_add(vx as u16),
-
-            // LD F, Vx
-            0xF if byte == 0x29 => *i = ram.to_sprite_addr(vx)?,
-
-            // LD B, Vx
-            0xF if byte == 0x33 => {
+            Lddt => *dt = vx,
+            Ldst => *st = vx,
+            Addi => *i = i.wrapping_add(vx as u16),
+            Sprite => *i = ram.to_sprite_addr(vx)?,
+            Bcd => {
                 ram.write_byte(*i, vx / 100)?;
                 ram.write_byte(i.saturating_add(1), (vx / 10) % 10)?;
                 ram.write_byte(i.saturating_add(2), vx % 10)?;
             }
-
-            // LD [I], Vx
-            0xF if byte == 0x55 => {
+            Sviv => {
                 for loc in 0..=vx_addr {
                     let val = reg.get(loc)?;
                     ram.write_byte(i.saturating_add(loc.into()), val)?;
                 }
             }
-
-            // Ld Vx, [I]
-            0xF if byte == 0x65 => {
+            Ldiv => {
                 for (&val, loc) in ram
                     .read_bytes(*i, vx_addr as u16 + 1)?
                     .iter()
@@ -306,8 +241,6 @@ where
                     reg.set(loc, val)?;
                 }
             }
-
-            _ => Err(Error::Instruction(instruction))?,
         };
 
         skip!(true);

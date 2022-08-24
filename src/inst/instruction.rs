@@ -1,3 +1,4 @@
+use super::bytecode::{decode, encode};
 use core::fmt;
 
 #[macro_export]
@@ -31,40 +32,40 @@ macro_rules! instruction_set {
             )+
         }
 
-        /// An instruction.
+        /// An opcode
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         #[non_exhaustive]
-        pub enum Instruction {
-            $(
-                #[$doc]
-                $name $( ( $($type),+ ) )?,
-            )+
+        #[repr(u16)]
+        pub enum Opcode {
+            $( #[$doc] $name = $code, )+
+        }
+
+        // An instruction
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct Instruction {
+            opcode: Opcode,
+            operands: Operands,
         }
 
         impl Instruction {
-            /// Generate a description of the instruction.
-            pub fn describe(&self) -> Description {
-                match self {
-                    $(
-                        &Self::$name $( ( $($arg),+ ) )? => (
-                            Description {
-                                name: stringify!($op),
-                                code: $code,
-                                operands: operands!( $( $($arg)+ => $($arg),+ )? )
-                            }
-                        ),
-                    )+
-                }
-            }
+            pub fn decode(inst: u16) -> Option<Self> {
+                use Opcode::*;
 
-            /// Encode this instruction to it's bytecode representation.
-            pub fn encode(&self) -> u16 {
-                match self {
+                Some(match Opcode::decode(inst)? {
                     $(
-                        &Self::$name $( ( $($arg),+ ) )? => {
-                            $crate::inst::ops::$op( $( $($arg),+ )? )
-                        }
+                        opcode @ $name => Instruction {
+                            opcode,
+                            operands: operands!( $( $($arg)+ )?; inst ),
+                        },
                     )+
+                })
+            }
+        }
+
+        impl Opcode {
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $( Self::$name => stringify!($op), )+
                 }
             }
         }
@@ -73,24 +74,20 @@ macro_rules! instruction_set {
         #[allow(overflowing_literals)]
         mod ops_tests {
             use $crate::inst::bytecode::{encode, decode};
-            use super::{ops, Instruction, Operands, Description};
+            use super::{ops, Instruction, Operands, Opcode};
 
             $(
                 #[test]
                 fn $op() {
                     $( $( let $arg = decode::$arg(encode::$arg(0x0ABC)); )+ )?
                     let inst = ops::$op( $( $($arg),+ )? );
+                    let operands = operands!( $( $($arg)+ )?; inst );
                     let decoded = Instruction::decode(inst).unwrap();
 
-                    assert_eq!(decoded.encode(), inst);
-                    assert_eq!(
-                        decoded.describe(),
-                        Description {
-                            name: stringify!($op),
-                            code: $code,
-                            operands: operands!( $( $($arg)+ => $($arg),+ )? ),
-                        }
-                    );
+                    assert_eq!(decoded.code(), $code);
+                    assert_eq!(decoded.opcode(), &Opcode::$name);
+                    assert_eq!(decoded.name(), stringify!($op));
+                    assert_eq!(decoded.operands(), &operands);
                 }
             )+
         }
@@ -111,28 +108,32 @@ macro_rules! op {
 }
 
 macro_rules! operands {
-    () => {
+    ($($arg: ident)+ = $variant: ident $inst: expr) => {
+        Operands::$variant( $( decode::$arg($inst) ),+ )
+    };
+
+    (; $inst: expr) => {
         Operands::Exact
     };
 
-    (addr => $addr: expr) => {
-        Operands::Addr($addr)
+    (addr; $inst: expr) => {
+        operands!(addr = Addr $inst)
     };
 
-    (vx => $vx: expr) => {
-        Operands::Vx($vx)
+    (vx; $inst: expr) => {
+        operands!(vx = Vx $inst)
     };
 
-    (vx vy => $vx: expr, $vy: expr) => {
-        Operands::VxVy($vx, $vy)
+    (vx vy; $inst: expr) => {
+        operands!(vx vy = VxVy $inst)
     };
 
-    (vx byte => $vx: expr, $byte: expr) => {
-        Operands::VxByte($vx, $byte)
+    (vx byte; $inst: expr) => {
+        operands!(vx byte = VxByte $inst)
     };
 
-    (vx vy nibble => $vx: expr, $vy: expr, $nibble: expr) => {
-        Operands::VxVyNibble($vx, $vy, $nibble)
+    (vx vy nibble; $inst: expr) => {
+        operands!(vx vy nibble = VxVyNibble $inst)
     };
 }
 
@@ -208,69 +209,72 @@ instruction_set! {
 }
 
 impl Instruction {
+    pub fn code(&self) -> u16 {
+        self.opcode as u16
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.opcode.name()
+    }
+
+    pub fn opcode(&self) -> &Opcode {
+        &self.opcode
+    }
+
+    pub fn operands(&self) -> &Operands {
+        &self.operands
+    }
+}
+
+impl Opcode {
     /// Attempt to decode an instruction from bytecode.
     pub fn decode(inst: u16) -> Option<Self> {
-        use super::bytecode::decode;
-        use Instruction::*;
-
-        macro_rules! de {
-            ($name: ident $( $($arg: ident),+ )? ) => {
-                Some($name $( ( $(decode::$arg(inst) ),+ ) )? )
-            };
-        }
+        use Opcode::*;
 
         match (inst & 0xF000) >> 12 {
-            0x0 if inst & 0xFFF == 0x0E0 => de!(Cls),
-            0x0 if inst & 0xFFF == 0x0EE => de!(Ret),
-            0x1 => de!(Jp addr),
-            0x2 => de!(Call addr),
-            0x3 => de!(Se vx, byte),
-            0x4 => de!(Sne vx, byte),
-            0x5 if inst & 0xF == 0x0 => de!(Sev vx, vy),
-            0x6 => de!(Ld vx, byte),
-            0x7 => de!(Add vx, byte),
+            0x0 if inst & 0xFFF == 0x0E0 => Some(Cls),
+            0x0 if inst & 0xFFF == 0x0EE => Some(Ret),
+            0x1 => Some(Jp),
+            0x2 => Some(Call),
+            0x3 => Some(Se),
+            0x4 => Some(Sne),
+            0x5 if inst & 0xF == 0x0 => Some(Sev),
+            0x6 => Some(Ld),
+            0x7 => Some(Add),
             0x8 => match inst & 0xF {
-                0x0 => de!(Ldv vx, vy),
-                0x1 => de!(Or vx, vy),
-                0x2 => de!(And vx, vy),
-                0x3 => de!(Xor vx, vy),
-                0x4 => de!(Addv vx, vy),
-                0x5 => de!(Sub vx, vy),
-                0x6 => de!(Shr vx),
-                0x7 => de!(Subn vx, vy),
-                0xE => de!(Shl vx),
+                0x0 => Some(Ldv),
+                0x1 => Some(Or),
+                0x2 => Some(And),
+                0x3 => Some(Xor),
+                0x4 => Some(Addv),
+                0x5 => Some(Sub),
+                0x6 => Some(Shr),
+                0x7 => Some(Subn),
+                0xE => Some(Shl),
                 _ => None,
             },
-            0x9 if inst & 0xF == 0x0 => de!(Snev vx, vy),
-            0xA => de!(Ldi addr),
-            0xB => de!(Jp0 addr),
-            0xC => de!(Rnd vx, byte),
-            0xD => de!(Drw vx, vy, nibble),
-            0xE if inst & 0xFF == 0x9E => de!(Skp vx),
-            0xE if inst & 0xFF == 0xA1 => de!(Sknp vx),
+            0x9 if inst & 0xF == 0x0 => Some(Snev),
+            0xA => Some(Ldi),
+            0xB => Some(Jp0),
+            0xC => Some(Rnd),
+            0xD => Some(Drw),
+            0xE if inst & 0xFF == 0x9E => Some(Skp),
+            0xE if inst & 0xFF == 0xA1 => Some(Sknp),
             0xF => match inst & 0xFF {
-                0x07 => de!(Lddtv vx),
-                0x0A => de!(Ldkey vx),
-                0x15 => de!(Lddt vx),
-                0x18 => de!(Ldst vx),
-                0x1E => de!(Addi vx),
-                0x29 => de!(Sprite vx),
-                0x33 => de!(Bcd vx),
-                0x55 => de!(Sviv vx),
-                0x65 => de!(Ldiv vx),
+                0x07 => Some(Lddtv),
+                0x0A => Some(Ldkey),
+                0x15 => Some(Lddt),
+                0x18 => Some(Ldst),
+                0x1E => Some(Addi),
+                0x29 => Some(Sprite),
+                0x33 => Some(Bcd),
+                0x55 => Some(Sviv),
+                0x65 => Some(Ldiv),
                 _ => None,
             },
             _ => None,
         }
     }
-}
-
-/// Description of an instruction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Description {
-    pub name: &'static str,
-    pub code: u16,
-    pub operands: Operands,
 }
 
 /// Operands for an instruction.
@@ -306,15 +310,9 @@ impl fmt::Display for Operands {
     }
 }
 
-impl fmt::Display for Description {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", self.name, self.operands)
-    }
-}
-
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.describe().fmt(f)
+        write!(f, "{} {}", self.opcode.name(), self.operands)
     }
 }
 
