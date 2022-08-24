@@ -1,5 +1,6 @@
-use crate::instruction::{Instruction, Operands};
+use crate::inst::{Instruction, Operands};
 use crate::io::{Screen, Viewport};
+use crate::prelude::*;
 use crate::vm::mem::Mem;
 
 const FRAME: &str = "▒";

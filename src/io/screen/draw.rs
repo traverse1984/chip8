@@ -1,3 +1,5 @@
+use crate::prelude::*;
+
 #[derive(Debug, Clone)]
 pub struct Draw {
     pub scans: Vec<(usize, String)>,

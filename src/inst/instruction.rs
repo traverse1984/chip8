@@ -3,7 +3,7 @@ use super::bytecode::decode;
 #[macro_export]
 macro_rules! chip8_asm {
     ( $( $fn: ident $($arg: expr),*; )+ ) => {
-        [ $( $crate::instruction::ops::$fn($($arg),*) ),+ ]
+        [ $( $crate::inst::ops::$fn($($arg),*) ),+ ]
     };
 }
 
@@ -42,7 +42,6 @@ macro_rules! instruction_set {
                 None
             }
         }
-
     };
 }
 
@@ -55,7 +54,7 @@ macro_rules! instruction {
         #[inline]
         #[doc = $doc]
         pub fn $name( $($arg: $type),* ) -> u16 {
-            use $crate::instruction::bytecode::encode as enc;
+            use $crate::inst::bytecode::encode as enc;
             $body
         }
     };
@@ -225,7 +224,7 @@ pub enum Operands {
     VxVyNibble(u8, u8, u8),
 }
 
-// Add feature
+#[cfg(feature = "std")]
 impl std::fmt::Display for Operands {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Operands::*;
@@ -240,7 +239,7 @@ impl std::fmt::Display for Operands {
     }
 }
 
-// Add feature
+#[cfg(feature = "std")]
 impl std::fmt::Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.name, self.operands)
@@ -358,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn program() {
+    fn assembler() {
         let prog = chip8_asm! {
             cls;
             jp 0x123;

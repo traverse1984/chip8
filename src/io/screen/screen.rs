@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use std::io::{self, Read, Stdout, Write};
 use termion::{
     clear, cursor,

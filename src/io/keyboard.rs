@@ -1,6 +1,8 @@
 use crate::hal::Keypad;
 use device_query::{DeviceQuery, DeviceState, Keycode};
+
 use std::panic;
+use std::prelude::rust_2021::*;
 
 pub enum Key {
     Symbol(u8),

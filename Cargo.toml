@@ -6,3 +6,12 @@ edition = "2021"
 [dependencies]
 termion = "1.5.6"
 device_query = "1.0.0"
+
+[features]
+default = []
+std = []
+debug = ["std"]
+
+[[bin]]
+name = "test"
+required-features = ["debug"]

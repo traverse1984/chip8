@@ -1,6 +1,6 @@
 use crate::chip8_asm;
 extern crate std;
-use super::instruction::ops;
+use super::inst::ops;
 use crate::vm::mem::{Error, Load, Ram, Result};
 use std::{dbg, print, println};
 
