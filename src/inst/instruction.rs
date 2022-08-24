@@ -1,9 +1,16 @@
-use super::bytecode::decode;
+use core::fmt;
 
 #[macro_export]
 macro_rules! chip8_asm {
     ( $( $fn: ident $($arg: expr),*; )+ ) => {
-        [ $( $crate::inst::ops::$fn($($arg),*) ),+ ]
+        [ $( $crate::chip8_inst!( $fn $($arg),* ) ),+ ]
+    };
+}
+
+#[macro_export]
+macro_rules! chip8_inst {
+    ($fn: ident $($arg: expr),*) => {
+        $crate::inst::ops::$fn( $($arg),* )
     };
 }
 
@@ -11,225 +18,282 @@ macro_rules! instruction_set {
     (
         $(
             #[$doc: meta]
-            $name: ident $($varname: ident),* -> $mask: literal;
+            $code: literal $name: ident = $op: ident
+            $( [ $($arg: ident $type: ty),+ ] )?;
         )+
     ) => {
         pub mod ops {
-            $(instruction!(#[$doc] $name $($varname),* -> $mask);)+
+            $(
+                op! {
+                    #[$doc]
+                    $op ( $( $($arg $type),+ )? ) -> $code
+                }
+            )+
+        }
+
+        /// An instruction.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum Instruction {
+            $(
+                #[$doc]
+                $name $( ( $($type),+ ) )?,
+            )+
         }
 
         impl Instruction {
-            pub fn decode(inst: u16) -> Option<Self> {
-                let instructions = [
-                    $(DecodeInstruction {
-                        name: stringify!($name),
-                        mask: $mask,
-                        operands: instruction_operands!($($varname),*),
-                    }),+
-                ];
-
-                for DecodeInstruction { name, operands, mask } in instructions {
-                    if operands.unmask(inst) == mask {
-                        return Some(Instruction {
-                            name,
-                            operands: operands.decode_from(inst),
-                            decoded_from: inst,
-                        });
-                    }
+            /// Generate a description of the instruction.
+            pub fn describe(&self) -> Description {
+                match self {
+                    $(
+                        &Self::$name $( ( $($arg),+ ) )? => (
+                            Description {
+                                name: stringify!($op),
+                                code: $code,
+                                operands: operands!( $( $($arg)+ => $($arg),+ )? )
+                            }
+                        ),
+                    )+
                 }
+            }
 
-                None
+            /// Encode this instruction to it's bytecode representation.
+            pub fn encode(&self) -> u16 {
+                match self {
+                    $(
+                        &Self::$name $( ( $($arg),+ ) )? => {
+                            $crate::inst::ops::$op( $( $($arg),+ )? )
+                        }
+                    )+
+                }
             }
         }
+
+        #[cfg(test)]
+        #[allow(overflowing_literals)]
+        mod ops_tests {
+            use $crate::inst::bytecode::{encode, decode};
+            use super::{ops, Instruction, Operands, Description};
+
+            $(
+                #[test]
+                fn $op() {
+                    $( $( let $arg = decode::$arg(encode::$arg(0x0ABC)); )+ )?
+                    let inst = ops::$op( $( $($arg),+ )? );
+                    let decoded = Instruction::decode(inst).unwrap();
+
+                    assert_eq!(decoded.encode(), inst);
+                    assert_eq!(
+                        decoded.describe(),
+                        Description {
+                            name: stringify!($op),
+                            code: $code,
+                            operands: operands!( $( $($arg)+ => $($arg),+ )? ),
+                        }
+                    );
+                }
+            )+
+        }
     };
 }
 
-macro_rules! instruction {
+macro_rules! op {
     (
         #[$doc: meta]
-        $name: ident ( $($arg: ident : $type: ty),* )
-            ->  $body: expr
+        $name: ident ( $( $($arg: ident $type: ty),+ )? ) -> $code: literal
     ) => {
-        #[inline]
         #[$doc]
-        pub fn $name( $($arg: $type),* ) -> u16 {
-            use $crate::inst::bytecode::encode as enc;
-            $body
-        }
-    };
-
-    (#[$doc: meta] $name: ident -> $mask: literal) => {
-        instruction! {
-            #[$doc]
-            $name () -> $mask
-        }
-    };
-
-    (#[$doc: meta] $name: ident addr -> $mask: literal) => {
-        instruction! {
-            #[$doc]
-            $name (addr: u16) -> $mask | enc::addr(addr)
-        }
-    };
-
-    (#[$doc:meta] $name: ident vx $(, any)? -> $mask: literal) => {
-        instruction! {
-            #[$doc]
-            $name (vx: u8) -> $mask | enc::vx(vx)
-        }
-    };
-
-    (#[$doc: meta] $name: ident vx, vy -> $mask: literal) => {
-        instruction! {
-            #[$doc]
-            $name (vx: u8, vy: u8) -> $mask | enc::vx(vx) | enc::vy(vy)
-        }
-    };
-
-    (#[$doc: meta] $name: ident vx, byte -> $mask: literal) => {
-        instruction! {
-            #[$doc]
-            $name (vx: u8, byte: u8) -> $mask | enc::vx(vx) | enc::byte(byte)
-        }
-    };
-
-    (#[$doc: meta] $name: ident vx, vy, nibble -> $mask: literal) => {
-        instruction! {
-            #[$doc]
-            $name (vx: u8, vy: u8, nibble: u8)
-                -> $mask | enc::vx(vx) | enc::vy(vy) | enc::nibble(nibble)
+        #[inline]
+        pub fn $name( $( $($arg: $type),+ )? ) -> u16 {
+            $code $( $( | $crate::inst::bytecode::encode::$arg($arg) )+ )?
         }
     };
 }
 
-macro_rules! instruction_operands {
+macro_rules! operands {
     () => {
-        DecodeOperands::Exact
+        Operands::Exact
     };
 
-    (addr) => {
-        DecodeOperands::Addr
+    (addr => $addr: expr) => {
+        Operands::Addr($addr)
     };
 
-    (vx) => {
-        DecodeOperands::Vx
+    (vx => $vx: expr) => {
+        Operands::Vx($vx)
     };
 
-    (vx, any) => {
-        DecodeOperands::VxAny
+    (vx vy => $vx: expr, $vy: expr) => {
+        Operands::VxVy($vx, $vy)
     };
 
-    (vx, vy) => {
-        DecodeOperands::VxVy
+    (vx byte => $vx: expr, $byte: expr) => {
+        Operands::VxByte($vx, $byte)
     };
 
-    (vx, byte) => {
-        DecodeOperands::VxByte
-    };
-
-    (vx, vy, nibble) => {
-        DecodeOperands::VxVyNibble
+    (vx vy nibble => $vx: expr, $vy: expr, $nibble: expr) => {
+        Operands::VxVyNibble($vx, $vy, $nibble)
     };
 }
 
 instruction_set! {
     /// Clear the display.
-    cls -> 0x00E0;
+    0x00E0 Cls = cls;
     /// Return from a subroutine.
-    ret -> 0x00EE;
+    0x00EE Ret = ret;
     /// Jump to location `addr`.
-    jp addr -> 0x1000;
+    0x1000 Jp = jp [addr u16];
     /// Call subroutine at `addr`.
-    call addr -> 0x2000;
+    0x2000 Call = call [addr u16];
     /// Skip next instruction if `vx` == `byte`.
-    se vx, byte -> 0x3000;
+    0x3000 Se = se [vx u8, byte u8];
     /// Skip next instruction if `vx` != `byte`.
-    sne vx, byte -> 0x4000;
+    0x4000 Sne = sne [vx u8, byte u8];
     /// Skip next instruction if `vx` == `vy`.
-    sev vx, vy -> 0x5000;
+    0x5000 Sev = sev [vx u8, vy u8];
     /// Set `vx` = `byte`.
-    ld vx, byte -> 0x6000;
+    0x6000 Ld = ld [vx u8, byte u8];
     /// Set `vx` = `vx` + `byte`.
-    add vx, byte -> 0x7000;
+    0x7000 Add = add [vx u8, byte u8];
     /// Set `vx` = `vy`.
-    ldv vx, vy -> 0x8000;
+    0x8000 Ldv = ldv [vx u8, vy u8];
     /// Set `vx` = `vx` OR `vy`.
-    or vx, vy -> 0x8001;
+    0x8001 Or = or [vx u8, vy u8];
     /// Set `vx` = `vx` AND `vy`.
-    and vx, vy -> 0x8002;
+    0x8002 And = and [vx u8, vy u8];
     /// Set `vx` = `vx` XOR `vy`.
-    xor vx, vy -> 0x8003;
+    0x8003 Xor = xor [vx u8, vy u8];
     /// Set `vx` = `vx` + `vy`, set `vf` = carry.
-    addv vx, vy -> 0x8004;
+    0x8004 Addv = addv [vx u8, vy u8];
     /// Set `vx` = `vx` - `vy`, set `vf` = NOT borrow.
-    sub vx, vy -> 0x8005;
+    0x8005 Sub = sub [vx u8, vy u8];
     /// Set `vx` = `vx` SHR 1.
-    shr vx, any -> 0x8006;
+    0x8006 Shr = shr [vx u8];
     /// Set `vx` = `vy` - `vx`. Set `vf` = NOT borrow.
-    subn vx, vy -> 0x8007;
+    0x8007 Subn = subn [vx u8, vy u8];
     /// Set `vx` = `vx` SHL 1.
-    shl vx, any -> 0x800E;
+    0x800E Shl = shl [vx u8];
     /// Skip next instruction if `vx` != `vy`.
-    snev vx, vy -> 0x9000;
+    0x9000 Snev = snev [vx u8, vy u8];
     /// Set **I** = `addr`.
-    ldi addr -> 0xA000;
+    0xA000 Ldi = ldi [addr u16];
     /// Jump to location `addr` + `v0`.
-    jp0 addr -> 0xB000;
+    0xB000 Jp0 = jp0 [addr u16];
     /// Set `vx` = random byte AND `byte`
-    rnd vx, byte -> 0xC000;
+    0xC000 Rnd = rnd [vx u8, byte u8];
     /// Display n-byte sprite at (`vx`, `vy`) starting at memory location **I**. Set `vf` = collision.
-    drw vx, vy, nibble -> 0xD000;
+    0xD000 Drw = drw [vx u8, vy u8, nibble u8];
     /// Skip next instruction if key with the value of `vx` is pressed.
-    skp vx -> 0xE09E;
+    0xE09E Skp = skp [vx u8];
     /// Skip next instruction if key with the value of `vx` is not pressed.
-    sknp vx -> 0xE0A1;
+    0xE0A1 Sknp = sknp [vx u8];
     /// Set `vx` = delay timer value.
-    lddtv vx -> 0xF007;
+    0xF007 Lddtv = lddtv [vx u8];
     /// Wait for a key press, store the value of the key in `vx`.
-    ldkey vx -> 0xF00A;
+    0xF00A Ldkey = ldkey [vx u8];
     /// Set delay timer = `vx`.
-    lddt vx -> 0xF015;
+    0xF015 Lddt = lddt [vx u8];
     /// Set sound timer = `vx`.
-    ldst vx -> 0xF018;
+    0xF018 Ldst = ldst [vx u8];
     /// Set **I** = **I** + `vx`.
-    addi vx -> 0xF01E;
+    0xF01E Addi = addi [vx u8];
     /// Set **I** = location of sprite for digit `vx`.
-    sprite vx -> 0xF029;
+    0xF029 Sprite = sprite [vx u8];
     /// Store BCD representation of `vx` in memory locations **I**, **I**+1, and **I**+2.
-    bcd vx -> 0xF033;
+    0xF033 Bcd = bcd [vx u8];
     /// Store registers `v0` through `vx` in memory starting at location **I**.
-    sviv vx -> 0xF055;
+    0xF055 Sviv = sviv [vx u8];
     /// Read registers `v0` through `vx` from memory starting at location **I**.
-    ldiv vx -> 0xF065;
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Instruction {
-    pub name: &'static str,
-    pub operands: Operands,
-    decoded_from: u16,
+    0xF065 Ldiv = ldiv [vx u8];
 }
 
 impl Instruction {
-    pub fn decoded_from(&self) -> u16 {
-        self.decoded_from
+    /// Attempt to decode an instruction from bytecode.
+    pub fn decode(inst: u16) -> Option<Self> {
+        use super::bytecode::decode;
+        use Instruction::*;
+
+        macro_rules! de {
+            ($name: ident $( $($arg: ident),+ )? ) => {
+                Some($name $( ( $(decode::$arg(inst) ),+ ) )? )
+            };
+        }
+
+        match (inst & 0xF000) >> 12 {
+            0x0 if inst & 0xFFF == 0x0E0 => de!(Cls),
+            0x0 if inst & 0xFFF == 0x0EE => de!(Ret),
+            0x1 => de!(Jp addr),
+            0x2 => de!(Call addr),
+            0x3 => de!(Se vx, byte),
+            0x4 => de!(Sne vx, byte),
+            0x5 if inst & 0xF == 0x0 => de!(Sev vx, vy),
+            0x6 => de!(Ld vx, byte),
+            0x7 => de!(Add vx, byte),
+            0x8 => match inst & 0xF {
+                0x0 => de!(Ldv vx, vy),
+                0x1 => de!(Or vx, vy),
+                0x2 => de!(And vx, vy),
+                0x3 => de!(Xor vx, vy),
+                0x4 => de!(Addv vx, vy),
+                0x5 => de!(Sub vx, vy),
+                0x6 => de!(Shr vx),
+                0x7 => de!(Subn vx, vy),
+                0xE => de!(Shl vx),
+                _ => None,
+            },
+            0x9 if inst & 0xF == 0x0 => de!(Snev vx, vy),
+            0xA => de!(Ldi addr),
+            0xB => de!(Jp0 addr),
+            0xC => de!(Rnd vx, byte),
+            0xD => de!(Drw vx, vy, nibble),
+            0xE if inst & 0xFF == 0x9E => de!(Skp vx),
+            0xE if inst & 0xFF == 0xA1 => de!(Sknp vx),
+            0xF => match inst & 0xFF {
+                0x07 => de!(Lddtv vx),
+                0x0A => de!(Ldkey vx),
+                0x15 => de!(Lddt vx),
+                0x18 => de!(Ldst vx),
+                0x1E => de!(Addi vx),
+                0x29 => de!(Sprite vx),
+                0x33 => de!(Bcd vx),
+                0x55 => de!(Sviv vx),
+                0x65 => de!(Ldiv vx),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }
 
+/// Description of an instruction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Description {
+    pub name: &'static str,
+    pub code: u16,
+    pub operands: Operands,
+}
+
+/// Operands for an instruction.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Operands {
+    /// An instruction which accepts no operands.
     Exact,
+    /// An instruction which expects address `addr`.
     Addr(u16),
+    /// An instruction which expects register `vx`.
     Vx(u8),
+    /// An instruction which expects registers `vx` and `vy`.
     VxVy(u8, u8),
+    /// An instruction which expects register `vx` and a `byte` of data.
     VxByte(u8, u8),
+    /// An instruction which expects registers `vx`, `vy` and a `nibble` of
+    /// data. In the chip8 instruction set, only `drw` has this signature.
     VxVyNibble(u8, u8, u8),
 }
 
-#[cfg(feature = "std")]
-impl std::fmt::Display for Operands {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Operands {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Operands::*;
         match self {
             Exact => Ok(()),
@@ -242,121 +306,25 @@ impl std::fmt::Display for Operands {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::fmt::Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Description {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.name, self.operands)
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-struct DecodeInstruction {
-    name: &'static str,
-    mask: u16,
-    operands: DecodeOperands,
-}
-
-#[derive(Debug, Copy, Clone)]
-enum DecodeOperands {
-    Exact,
-    Addr,
-    Vx,
-    VxVy,
-    VxAny,
-    VxByte,
-    VxVyNibble,
-}
-
-impl DecodeOperands {
-    fn unmask(&self, inst: u16) -> u16 {
-        use DecodeOperands::*;
-        inst & match self {
-            Exact => 0xFFFF,
-            Addr | VxByte | VxVyNibble => 0xF000,
-            VxVy | VxAny => 0xF00F,
-            Vx => 0xF0FF,
-        }
-    }
-
-    fn decode_from(&self, inst: u16) -> Operands {
-        use decode::*;
-        use DecodeOperands::*;
-        use Operands as Op;
-
-        match self {
-            Exact => Op::Exact,
-            Addr => Op::Addr(addr(inst)),
-            Vx | VxAny => Op::Vx(vx(inst)),
-            VxVy => Op::VxVy(vx(inst), vy(inst)),
-            VxByte => Op::VxByte(vx(inst), byte(inst)),
-            VxVyNibble => Op::VxVyNibble(vx(inst), vy(inst), nibble(inst)),
-        }
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.describe().fmt(f)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ops, Instruction, Operands};
+    use super::Instruction;
 
-    macro_rules! test_instructions {
-        (
-            $(
-                $name: ident ( $( $($arg: literal),+ )? )
-                    -> $ret: literal -> $variant: ident;
-            )+
-        ) => {
-            $(
-                #[test]
-                fn $name() {
-                    assert_eq!( ops::$name( $( $($arg),+ )? ), $ret );
-                    assert_eq!(
-                        Instruction::decode($ret).unwrap(),
-                        Instruction {
-                            name: stringify!($name),
-                            operands: Operands::$variant $( ( $($arg),+ ) )?,
-                            decoded_from: $ret,
-                        }
-                    );
-                }
-            )+
-        };
-    }
-
-    test_instructions! {
-        cls () -> 0x00E0 -> Exact;
-        ret () -> 0x00EE -> Exact;
-        jp (0x123) -> 0x1123 -> Addr;
-        call (0x123) -> 0x2123 -> Addr;
-        se (1, 0x23) -> 0x3123 -> VxByte;
-        sne (1, 0x23) -> 0x4123 -> VxByte;
-        sev (1, 2) -> 0x5120 -> VxVy;
-        ld (1, 0x23) -> 0x6123 -> VxByte;
-        add (1, 0x23) -> 0x7123 -> VxByte;
-        ldv (1, 2) -> 0x8120 -> VxVy;
-        or (1, 2) -> 0x8121 -> VxVy;
-        and (1, 2) -> 0x8122 -> VxVy;
-        xor (1, 2) -> 0x8123 -> VxVy;
-        addv (1, 2) -> 0x8124 -> VxVy;
-        sub (1, 2) -> 0x8125 -> VxVy;
-        shr (1) -> 0x8106 -> Vx;
-        subn (1, 2) -> 0x8127 -> VxVy;
-        shl (1) -> 0x810E -> Vx;
-        snev (1, 2) -> 0x9120 -> VxVy;
-        ldi (0x123) -> 0xA123 -> Addr;
-        jp0 (0x123) -> 0xB123 -> Addr;
-        rnd (1, 0x23) -> 0xC123 -> VxByte;
-        drw (1, 2, 3) -> 0xD123 -> VxVyNibble;
-        skp (1) -> 0xE19E -> Vx;
-        sknp (1) -> 0xE1A1 -> Vx;
-        lddtv (1) -> 0xF107 -> Vx;
-        ldkey (1) -> 0xF10A -> Vx;
-        lddt (1) -> 0xF115 -> Vx;
-        ldst (1) -> 0xF118 -> Vx;
-        addi (1) -> 0xF11E -> Vx;
-        sprite (1) -> 0xF129 -> Vx;
-        bcd (1) -> 0xF133 -> Vx;
-        sviv (1) -> 0xF155 -> Vx;
-        ldiv (1) -> 0xF165 -> Vx;
+    #[test]
+    fn invalid_instruction() {
+        assert_eq!(Instruction::decode(0x0123), None);
     }
 
     #[test]

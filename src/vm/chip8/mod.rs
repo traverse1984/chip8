@@ -6,6 +6,8 @@ use crate::vm::mem::{Load, Mem, Ram, SPRITES};
 use super::error::{Error, Result};
 use crate::hal::{Buzzer, Delay, Keypad, Rng, Screen};
 
+use crate::inst::Instruction;
+
 #[cfg(test)]
 mod tests;
 

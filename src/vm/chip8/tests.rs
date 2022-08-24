@@ -53,11 +53,11 @@ fn cls() {
 fn ret() {
     let mut chip = chip!();
 
-    chip.mem.stack.push(0x345).unwrap();
+    chip.mem.stack.push(0x344).unwrap();
     chip.exec(0x00EE).unwrap();
 
     assert_eq!(chip.mem.stack.pop().unwrap_err(), mem::Error::StackEmpty);
-    assert_eq!(chip.mem.pc, 0x345);
+    assert_eq!(chip.mem.pc, 0x346);
 }
 
 #[test]
