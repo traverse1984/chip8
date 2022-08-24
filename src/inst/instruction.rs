@@ -10,13 +10,12 @@ macro_rules! chip8_asm {
 macro_rules! instruction_set {
     (
         $(
-            $doc: expr;
-            $name: ident $($varname: ident),*
-                -> $mask: literal;
+            #[$doc: meta]
+            $name: ident $($varname: ident),* -> $mask: literal;
         )+
     ) => {
         pub mod ops {
-            $(instruction!($doc; $name $($varname),* -> $mask);)+
+            $(instruction!(#[$doc] $name $($varname),* -> $mask);)+
         }
 
         impl Instruction {
@@ -47,53 +46,57 @@ macro_rules! instruction_set {
 
 macro_rules! instruction {
     (
-        $doc: expr;
+        #[$doc: meta]
         $name: ident ( $($arg: ident : $type: ty),* )
             ->  $body: expr
     ) => {
         #[inline]
-        #[doc = $doc]
+        #[$doc]
         pub fn $name( $($arg: $type),* ) -> u16 {
             use $crate::inst::bytecode::encode as enc;
             $body
         }
     };
 
-    ($doc: expr; $name: ident -> $mask: literal) => {
-        instruction! { $doc; $name () -> $mask }
-    };
-
-    ($doc: expr; $name: ident addr -> $mask: literal) => {
+    (#[$doc: meta] $name: ident -> $mask: literal) => {
         instruction! {
-            $doc; $name (addr: u16)
-                -> $mask | enc::addr(addr)
+            #[$doc]
+            $name () -> $mask
         }
     };
 
-    ($doc: expr; $name: ident vx $(, any)? -> $mask: literal) => {
+    (#[$doc: meta] $name: ident addr -> $mask: literal) => {
         instruction! {
-            $doc; $name (vx: u8)
-                -> $mask | enc::vx(vx)
+            #[$doc]
+            $name (addr: u16) -> $mask | enc::addr(addr)
         }
     };
 
-    ($doc: expr; $name: ident vx, vy -> $mask: literal) => {
+    (#[$doc:meta] $name: ident vx $(, any)? -> $mask: literal) => {
         instruction! {
-            $doc; $name (vx: u8, vy: u8)
-                -> $mask | enc::vx(vx) | enc::vy(vy)
+            #[$doc]
+            $name (vx: u8) -> $mask | enc::vx(vx)
         }
     };
 
-    ($doc: expr; $name: ident vx, byte -> $mask: literal) => {
+    (#[$doc: meta] $name: ident vx, vy -> $mask: literal) => {
         instruction! {
-            $doc; $name (vx: u8, byte: u8)
-                -> $mask | enc::vx(vx) | enc::byte(byte)
+            #[$doc]
+            $name (vx: u8, vy: u8) -> $mask | enc::vx(vx) | enc::vy(vy)
         }
     };
 
-    ($doc: expr; $name: ident vx, vy, nibble -> $mask: literal) => {
+    (#[$doc: meta] $name: ident vx, byte -> $mask: literal) => {
         instruction! {
-            $doc; $name (vx: u8, vy: u8, nibble: u8)
+            #[$doc]
+            $name (vx: u8, byte: u8) -> $mask | enc::vx(vx) | enc::byte(byte)
+        }
+    };
+
+    (#[$doc: meta] $name: ident vx, vy, nibble -> $mask: literal) => {
+        instruction! {
+            #[$doc]
+            $name (vx: u8, vy: u8, nibble: u8)
                 -> $mask | enc::vx(vx) | enc::vy(vy) | enc::nibble(nibble)
         }
     };
@@ -130,74 +133,74 @@ macro_rules! instruction_operands {
 }
 
 instruction_set! {
-    "Clear the display.";
-        cls -> 0x00E0;
-    "Return from a subroutine.";
-        ret -> 0x00EE;
-    "Jump to location `addr`.";
-        jp addr -> 0x1000;
-    "Call subroutine at `addr`.";
-        call addr -> 0x2000;
-    "Skip next instruction if `vx` == `byte`.";
-        se vx, byte -> 0x3000;
-    "Skip next instruction if `vx` != `byte`.";
-        sne vx, byte -> 0x4000;
-    "Skip next instruction if `vx` == `vy`.";
-        sev vx, vy -> 0x5000;
-    "Set `vx` = `byte`.";
-        ld vx, byte -> 0x6000;
-    "Set `vx` = `vx` + `byte`.";
-        add vx, byte -> 0x7000;
-    "Set `vx` = `vy`.";
-        ldv vx, vy -> 0x8000;
-    "Set `vx` = `vx` OR `vy`.";
-        or vx, vy -> 0x8001;
-    "Set `vx` = `vx` AND `vy`.";
-        and vx, vy -> 0x8002;
-    "Set `vx` = `vx` XOR `vy`.";
-        xor vx, vy -> 0x8003;
-    "Set `vx` = `vx` + `vy`, set `vf` = carry.";
-        addv vx, vy -> 0x8004;
-    "Set `vx` = `vx` - `vy`, set `vf` = NOT borrow.";
-        sub vx, vy -> 0x8005;
-    "Set `vx` = `vx` SHR 1.";
-        shr vx, any -> 0x8006;
-    "Set `vx` = `vy` - `vx`. Set `vf` = NOT borrow.";
-        subn vx, vy -> 0x8007;
-    "Set `vx` = `vx` SHL 1.";
-        shl vx, any -> 0x800E;
-    "Skip next instruction if `vx` != `vy`.";
-        snev vx, vy -> 0x9000;
-    "Set **I** = `addr`.";
-        ldi addr -> 0xA000;
-    "Jump to location `addr` + `v0`.";
-        jp0 addr -> 0xB000;
-    "Set `vx` = random byte AND `byte`";
-        rnd vx, byte -> 0xC000;
-    "Display n-byte sprite at (`vx`, `vy`) starting at memory location **I**. Set `vf` = collision.";
-        drw vx, vy, nibble -> 0xD000;
-    "Skip next instruction if key with the value of `vx` is pressed.";
-        skp vx -> 0xE09E;
-    "Skip next instruction if key with the value of `vx` is not pressed.";
-        sknp vx -> 0xE0A1;
-    "Set `vx` = delay timer value.";
-        lddtv vx -> 0xF007;
-    "Wait for a key press, store the value of the key in `vx`.";
-        ldkey vx -> 0xF00A;
-    "Set delay timer = `vx`.";
-        lddt vx -> 0xF015;
-    "Set sound timer = `vx`.";
-        ldst vx -> 0xF018;
-    "Set **I** = **I** + `vx`.";
-        addi vx -> 0xF01E;
-    "Set **I** = location of sprite for digit `vx`.";
-        sprite vx -> 0xF029;
-    "Store BCD representation of `vx` in memory locations **I**, **I**+1, and **I**+2.";
-        bcd vx -> 0xF033;
-    "Store registers `v0` through `vx` in memory starting at location **I**.";
-        sviv vx -> 0xF055;
-    "Read registers `v0` through `vx` from memory starting at location **I**.";
-        ldiv vx -> 0xF065;
+    /// Clear the display.
+    cls -> 0x00E0;
+    /// Return from a subroutine.
+    ret -> 0x00EE;
+    /// Jump to location `addr`.
+    jp addr -> 0x1000;
+    /// Call subroutine at `addr`.
+    call addr -> 0x2000;
+    /// Skip next instruction if `vx` == `byte`.
+    se vx, byte -> 0x3000;
+    /// Skip next instruction if `vx` != `byte`.
+    sne vx, byte -> 0x4000;
+    /// Skip next instruction if `vx` == `vy`.
+    sev vx, vy -> 0x5000;
+    /// Set `vx` = `byte`.
+    ld vx, byte -> 0x6000;
+    /// Set `vx` = `vx` + `byte`.
+    add vx, byte -> 0x7000;
+    /// Set `vx` = `vy`.
+    ldv vx, vy -> 0x8000;
+    /// Set `vx` = `vx` OR `vy`.
+    or vx, vy -> 0x8001;
+    /// Set `vx` = `vx` AND `vy`.
+    and vx, vy -> 0x8002;
+    /// Set `vx` = `vx` XOR `vy`.
+    xor vx, vy -> 0x8003;
+    /// Set `vx` = `vx` + `vy`, set `vf` = carry.
+    addv vx, vy -> 0x8004;
+    /// Set `vx` = `vx` - `vy`, set `vf` = NOT borrow.
+    sub vx, vy -> 0x8005;
+    /// Set `vx` = `vx` SHR 1.
+    shr vx, any -> 0x8006;
+    /// Set `vx` = `vy` - `vx`. Set `vf` = NOT borrow.
+    subn vx, vy -> 0x8007;
+    /// Set `vx` = `vx` SHL 1.
+    shl vx, any -> 0x800E;
+    /// Skip next instruction if `vx` != `vy`.
+    snev vx, vy -> 0x9000;
+    /// Set **I** = `addr`.
+    ldi addr -> 0xA000;
+    /// Jump to location `addr` + `v0`.
+    jp0 addr -> 0xB000;
+    /// Set `vx` = random byte AND `byte`
+    rnd vx, byte -> 0xC000;
+    /// Display n-byte sprite at (`vx`, `vy`) starting at memory location **I**. Set `vf` = collision.
+    drw vx, vy, nibble -> 0xD000;
+    /// Skip next instruction if key with the value of `vx` is pressed.
+    skp vx -> 0xE09E;
+    /// Skip next instruction if key with the value of `vx` is not pressed.
+    sknp vx -> 0xE0A1;
+    /// Set `vx` = delay timer value.
+    lddtv vx -> 0xF007;
+    /// Wait for a key press, store the value of the key in `vx`.
+    ldkey vx -> 0xF00A;
+    /// Set delay timer = `vx`.
+    lddt vx -> 0xF015;
+    /// Set sound timer = `vx`.
+    ldst vx -> 0xF018;
+    /// Set **I** = **I** + `vx`.
+    addi vx -> 0xF01E;
+    /// Set **I** = location of sprite for digit `vx`.
+    sprite vx -> 0xF029;
+    /// Store BCD representation of `vx` in memory locations **I**, **I**+1, and **I**+2.
+    bcd vx -> 0xF033;
+    /// Store registers `v0` through `vx` in memory starting at location **I**.
+    sviv vx -> 0xF055;
+    /// Read registers `v0` through `vx` from memory starting at location **I**.
+    ldiv vx -> 0xF065;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
