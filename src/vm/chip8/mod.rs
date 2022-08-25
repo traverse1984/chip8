@@ -6,7 +6,7 @@ use crate::vm::mem::{Load, Mem, Ram, SPRITES};
 use super::error::{Error, Result};
 use crate::hal::{Buzzer, Delay, Keypad, Rng, Screen};
 
-use crate::inst::{bytecode::decode, Opcode};
+use crate::inst::{bytecode::bc, Opcode};
 
 #[cfg(test)]
 mod tests;
@@ -110,10 +110,9 @@ where
     }
 
     fn exec(&mut self, inst: u16) -> Result {
-        let addr = decode::addr(inst);
-        let byte = decode::byte(inst);
-        let nibble = decode::nibble(inst);
-        let vx_reg = decode::vx(inst);
+        let (addr, vx_reg, vy_reg, byte, nibble) = bc! {
+            with inst; decode addr, vx, vy, byte, nibble
+        };
 
         let Mem {
             i,
@@ -126,7 +125,7 @@ where
         } = &mut self.mem;
 
         let vx = reg.get(vx_reg)?;
-        let vy = reg.get(byte >> 4)?;
+        let vy = reg.get(vy_reg)?;
 
         /// Set or increment the program counter
         macro_rules! jump {

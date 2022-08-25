@@ -1,3 +1,22 @@
+/// Work with Chip8 bytecode
+///
+/// # Examples
+/// ```
+/// let by: u16 = bc!(encode byte 0x85);
+/// assert_eq!(by, 0x0085);
+///
+/// let m1 = (u16, u16) = bc!(encode vx 3, vy 4);
+/// assert_eq!(m1, (0x0300, 0x0040));
+///
+/// let nib: u8 = bc!(decode nibble 0xABCD);
+/// assert_eq!(nib, 0xD);
+///
+/// let m2 = bc!(with 0xABCD; decode addr, vx, vy);
+/// assert_eq!(m2, (0xB, 0xC, 0xBCD));
+///
+/// let inst = bc!(opcode 0xA000; vx 0xB, byte 0xCD);
+/// assert_eq!(inst, 0xABCD);
+/// ```
 macro_rules! bc {
     ( $mod: ident $($arg: ident $val: expr),* ) => {
         ( $( $crate::inst::bytecode::$mod::$arg($val) ),* )

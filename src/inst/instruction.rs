@@ -1,4 +1,3 @@
-use super::bytecode::{decode, encode};
 use core::fmt;
 
 #[macro_export]
@@ -40,11 +39,12 @@ macro_rules! instruction_set {
             $( #[$doc] $name = $code, )+
         }
 
-        // An instruction
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub struct Instruction {
-            opcode: Opcode,
-            operands: Operands,
+        impl Opcode {
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $( Self::$name => stringify!($op), )+
+                }
+            }
         }
 
         impl Instruction {
@@ -62,24 +62,22 @@ macro_rules! instruction_set {
             }
         }
 
-        impl Opcode {
-            pub fn name(&self) -> &'static str {
-                match self {
-                    $( Self::$name => stringify!($op), )+
-                }
-            }
-        }
-
         #[cfg(test)]
         #[allow(overflowing_literals)]
         mod ops_tests {
-            use $crate::inst::bytecode::{encode, decode};
+            use $crate::inst::bytecode::bc;
             use super::{ops, Instruction, Operands, Opcode};
+
+            macro_rules! test_arg {
+                ($argn: ident) => {
+                    bc!(decode $argn bc!(encode $argn 0x0ABC));
+                };
+            }
 
             $(
                 #[test]
                 fn $op() {
-                    $( $( let $arg = decode::$arg(encode::$arg(0x0ABC)); )+ )?
+                    $( $( let $arg = test_arg!($arg); )+ )?
                     let inst = ops::$op( $( $($arg),+ )? );
                     let operands = operands!( $( $($arg)+ )?; inst );
                     let decoded = Instruction::decode(inst).unwrap();
@@ -102,14 +100,16 @@ macro_rules! op {
         #[$doc]
         #[inline]
         pub fn $name( $( $($arg: $type),+ )? ) -> u16 {
-            $code $( $( | $crate::inst::bytecode::encode::$arg($arg) )+ )?
+            $crate::inst::bytecode::bc!( opcode $code; $( $($arg $arg),+ )? )
         }
     };
 }
 
 macro_rules! operands {
     ($($arg: ident)+ = $variant: ident $inst: expr) => {
-        Operands::$variant( $( decode::$arg($inst) ),+ )
+        Operands::$variant(
+            $( $crate::inst::bytecode::bc!(decode $arg $inst) ),+
+        )
     };
 
     (; $inst: expr) => {
@@ -206,6 +206,13 @@ instruction_set! {
     0xF055 Sviv = sviv [vx u8];
     /// Read registers `v0` through `vx` from memory starting at location **I**.
     0xF065 Ldiv = ldiv [vx u8];
+}
+
+// An instruction
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Instruction {
+    opcode: Opcode,
+    operands: Operands,
 }
 
 impl Instruction {
