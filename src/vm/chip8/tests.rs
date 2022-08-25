@@ -2,19 +2,28 @@ extern crate std;
 use super::Error;
 use super::{INST_STEP, REG_FLAG};
 use crate::hal::{chip, ScreenCommand};
+use crate::inst::ops;
 use crate::vm::mem::{self, Load};
 use std::vec;
 
-/// Set multiple registers of a new chip8 mock, or read a single register.
-macro_rules! reg {
+macro_rules! preset {
     ($($reg: literal = $val: literal),+) => {{
         let mut chip = chip!();
         $(chip.mem.reg.set($reg, $val).unwrap();)+
         chip
     }};
+}
 
+/// Set multiple registers of a new chip8 mock, or read a single register.
+macro_rules! reg {
     ($chip: ident $reg: expr) => {
         $chip.mem.reg.get($reg).unwrap()
+    };
+}
+
+macro_rules! exec {
+    ($chip: ident $op: ident $($arg: expr),*) => {
+        $chip.exec( ops::$op( $($arg),* ) ).unwrap()
     };
 }
 
@@ -44,7 +53,7 @@ macro_rules! reg {
 fn cls() {
     let mut chip = chip!();
 
-    chip.exec(0x00E0).unwrap();
+    exec!(chip cls);
     let (screen, ..) = chip.free();
     assert_eq!(screen.commands, vec![ScreenCommand::Clear])
 }
@@ -52,31 +61,30 @@ fn cls() {
 #[test]
 fn ret() {
     let mut chip = chip!();
-
     chip.mem.stack.push(0x344).unwrap();
-    chip.exec(0x00EE).unwrap();
 
+    exec!(chip ret);
     assert_eq!(chip.mem.stack.pop().unwrap_err(), mem::Error::StackEmpty);
     assert_eq!(chip.mem.pc, 0x346);
 }
 
 #[test]
-fn jp_nnn() {
+fn jp() {
     let mut chip = chip!();
 
-    chip.exec(0x1123).unwrap();
+    exec!(chip jp 0x123);
     assert_eq!(chip.mem.pc, 0x0123);
 
-    chip.exec(0x1456).unwrap();
+    exec!(chip jp 0x456);
     assert_eq!(chip.mem.pc, 0x0456);
 }
 
 #[test]
-fn call_nnn() {
+fn call() {
     let mut chip = chip!();
     chip.mem.pc = 0x0123;
-    chip.exec(0x2456).unwrap();
 
+    exec!(chip call 0x456);
     assert_eq!(chip.mem.pc, 0x0456);
     assert_eq!(chip.mem.stack.pop().unwrap(), 0x0123);
 }
@@ -85,14 +93,14 @@ fn call_nnn() {
 // Skip next instruction if Vx = kk.
 // The interpreter compares register Vx to kk, and if they are equal, increments the program counter by 2.
 #[test]
-fn se_x_kk() {
-    let mut chip = reg!(0 = 0x23);
+fn se() {
+    let mut chip = preset!(0 = 0x23);
 
-    chip.exec(0x3023).unwrap();
+    exec!(chip se 0, 0x23);
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
 
     chip.mem.pc = 0;
-    chip.exec(0x3024).unwrap();
+    exec!(chip se 0, 0x24);
     assert_eq!(chip.mem.pc, INST_STEP);
 }
 
@@ -100,43 +108,37 @@ fn se_x_kk() {
 // Skip next instruction if Vx != kk.
 // The interpreter compares register Vx to kk, and if they are not equal, increments the program counter by 2.
 #[test]
-fn sne_x_kk() {
-    let mut chip = reg!(0 = 0x23);
+fn sne() {
+    let mut chip = preset!(0 = 0x23);
 
-    chip.exec(0x4023).unwrap();
+    exec!(chip sne 0, 0x23);
     assert_eq!(chip.mem.pc, INST_STEP);
 
     chip.mem.pc = 0;
-    chip.exec(0x4024).unwrap();
+    exec!(chip sne 0, 0x24);
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
 }
 
-// 5xy0
-// Skip next instruction if Vx = Vy.
-// The interpreter compares register Vx to register Vy, and if they are equal, increments the program counter by 2.
 #[test]
-fn se_x_y() {
-    let mut chip = reg!(0 = 0x23, 1 = 0x23, 2 = 0x34);
+fn sev() {
+    let mut chip = preset!(0 = 0x23, 1 = 0x23, 2 = 0x34);
 
-    chip.exec(0x5010).unwrap();
+    exec!(chip sev 0, 1);
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
 
     chip.mem.pc = 0;
-    chip.exec(0x5020).unwrap();
+    exec!(chip sev 0, 2);
     assert_eq!(chip.mem.pc, INST_STEP);
 }
 
-// 6xkk - LD Vx, byte
-// Set Vx = kk.
-// The interpreter puts the value kk into register Vx.
 #[test]
-fn ld_x_kk() {
+fn ld() {
     let mut chip = chip!();
 
-    chip.exec(0x6012).unwrap();
+    exec!(chip ld 0, 0x12);
     assert_eq!(reg!(chip 0), 0x12);
 
-    chip.exec(0x6E34).unwrap();
+    exec!(chip ld 0xE, 0x34);
     assert_eq!(reg!(chip 0xE), 0x34);
 }
 
@@ -145,7 +147,7 @@ fn ld_x_kk() {
 // Adds the value kk to the value of register Vx, then stores the result in Vx.
 #[test]
 fn add_x_kk() {
-    let mut chip = reg!(0 = 10, 1 = 254);
+    let mut chip = preset!(0 = 10, 1 = 254);
 
     chip.exec(0x7002).unwrap();
     assert_eq!(reg!(chip 0), 12);
@@ -159,7 +161,7 @@ fn add_x_kk() {
 // Stores the value of register Vy in register Vx.
 #[test]
 fn ld_x_y() {
-    let mut chip = reg!(1 = 123);
+    let mut chip = preset!(1 = 123);
 
     chip.exec(0x8010).unwrap();
     assert_eq!(reg!(chip 0), 123);
@@ -171,7 +173,7 @@ fn ld_x_y() {
 // Performs a bitwise OR on the values of Vx and Vy, then stores the result in Vx. A bitwise OR compares the corrseponding bits from two values, and if either bit is 1, then the same bit in the result is also 1. Otherwise, it is 0.
 #[test]
 fn or_x_y() {
-    let mut chip = reg!(0 = 123, 1 = 45);
+    let mut chip = preset!(0 = 123, 1 = 45);
 
     chip.exec(0x8011).unwrap();
     assert_eq!(reg!(chip 0), 123 | 45);
@@ -182,7 +184,7 @@ fn or_x_y() {
 // Performs a bitwise AND on the values of Vx and Vy, then stores the result in Vx. A bitwise AND compares the corrseponding bits from two values, and if both bits are 1, then the same bit in the result is also 1. Otherwise, it is 0.
 #[test]
 fn and_x_y() {
-    let mut chip = reg!(0 = 123, 1 = 45);
+    let mut chip = preset!(0 = 123, 1 = 45);
 
     chip.exec(0x8012).unwrap();
     assert_eq!(reg!(chip 0), 123 & 45);
@@ -193,7 +195,7 @@ fn and_x_y() {
 // Performs a bitwise exclusive OR on the values of Vx and Vy, then stores the result in Vx. An exclusive OR compares the corrseponding bits from two values, and if the bits are not both the same, then the corresponding bit in the result is set to 1. Otherwise, it is 0.
 #[test]
 fn xor_x_y() {
-    let mut chip = reg!(0 = 123, 1 = 45);
+    let mut chip = preset!(0 = 123, 1 = 45);
 
     chip.exec(0x8013).unwrap();
     assert_eq!(reg!(chip 0), 123 ^ 45);
@@ -204,7 +206,7 @@ fn xor_x_y() {
 // The values of Vx and Vy are added together. If the result is greater than 8 bits (i.e., > 255,) VF is set to 1, otherwise 0. Only the lowest 8 bits of the result are kept, and stored in Vx.
 #[test]
 fn add_x_y() {
-    let mut chip = reg!(0 = 254, 1 = 2, 2 = 3);
+    let mut chip = preset!(0 = 254, 1 = 2, 2 = 3);
 
     chip.exec(0x8014).unwrap();
     assert_eq!(reg!(chip 0), 0);
@@ -220,7 +222,7 @@ fn add_x_y() {
 // If Vx > Vy, then VF is set to 1, otherwise 0. Then Vy is subtracted from Vx, and the results stored in Vx.
 #[test]
 fn sub_x_y() {
-    let mut chip = reg!(0 = 3, 1 = 1, 2 = 2);
+    let mut chip = preset!(0 = 3, 1 = 1, 2 = 2);
 
     chip.exec(0x8015).unwrap();
     assert_eq!(reg!(chip 0), 2);
@@ -236,7 +238,7 @@ fn sub_x_y() {
 // If the least-significant bit of Vx is 1, then VF is set to 1, otherwise 0. Then Vx is divided by 2.
 #[test]
 fn shr_x() {
-    let mut chip = reg!(0 = 0b00000101);
+    let mut chip = preset!(0 = 0b00000101);
 
     chip.exec(0x8006).unwrap();
     assert_eq!(reg!(chip 0), 0b00000010);
@@ -252,7 +254,7 @@ fn shr_x() {
 // If Vy > Vx, then VF is set to 1, otherwise 0. Then Vx is subtracted from Vy, and the results stored in Vx.
 #[test]
 fn subn_x_y() {
-    let mut chip = reg!(0 = 3, 1 = 1, 2 = 2);
+    let mut chip = preset!(0 = 3, 1 = 1, 2 = 2);
 
     chip.exec(0x8107).unwrap();
     assert_eq!(reg!(chip 1), 2);
@@ -268,7 +270,7 @@ fn subn_x_y() {
 // If the most-significant bit of Vx is 1, then VF is set to 1, otherwise to 0. Then Vx is multiplied by 2.
 #[test]
 fn shl_x() {
-    let mut chip = reg!(0 = 0b10100000);
+    let mut chip = preset!(0 = 0b10100000);
 
     chip.exec(0x800E).unwrap();
     assert_eq!(reg!(chip 0), 0b01000000);
@@ -284,7 +286,7 @@ fn shl_x() {
 // The values of Vx and Vy are compared, and if they are not equal, the program counter is increased by 2.
 #[test]
 fn sne_x_y() {
-    let mut chip = reg!(0 = 1, 1 = 2, 2 = 1);
+    let mut chip = preset!(0 = 1, 1 = 2, 2 = 1);
 
     chip.exec(0x9010).unwrap();
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
@@ -310,7 +312,7 @@ fn ld_i_nnn() {
 // The program counter is set to addr plus the value of V0.
 #[test]
 fn jp0_nnn() {
-    let mut chip = reg!(0 = 3);
+    let mut chip = preset!(0 = 3);
 
     chip.exec(0xB120).unwrap();
     assert_eq!(chip.mem.pc, 0x123);
@@ -427,7 +429,7 @@ fn ld_x_key() {
 // DT is set equal to the value of Vx.
 #[test]
 fn ld_dt_x() {
-    let mut chip = reg!(0 = 123);
+    let mut chip = preset!(0 = 123);
 
     chip.exec(0xF015).unwrap();
     assert_eq!(chip.mem.dt, 123);
@@ -438,7 +440,7 @@ fn ld_dt_x() {
 // ST is set equal to the value of Vx.
 #[test]
 fn ld_st_x() {
-    let mut chip = reg!(0 = 123);
+    let mut chip = preset!(0 = 123);
 
     chip.exec(0xF018).unwrap();
     assert_eq!(chip.mem.st, 123);
@@ -449,7 +451,7 @@ fn ld_st_x() {
 // The values of I and Vx are added, and the results are stored in I.
 #[test]
 fn add_i_x() {
-    let mut chip = reg!(0 = 0x03);
+    let mut chip = preset!(0 = 0x03);
 
     chip.mem.i = 0x120;
     chip.exec(0xF01E).unwrap();
@@ -461,7 +463,7 @@ fn add_i_x() {
 // The value of I is set to the location for the hexadecimal sprite corresponding to the value of Vx. See section 2.4, Display, for more information on the Chip-8 hexadecimal font.
 #[test]
 fn ld_sprite_x() {
-    let mut chip = reg!(0 = 0, 1 = 0xF);
+    let mut chip = preset!(0 = 0, 1 = 0xF);
     let s0 = chip.mem.ram.to_sprite_addr(0).unwrap();
     let sf = chip.mem.ram.to_sprite_addr(0xF).unwrap();
 
@@ -477,7 +479,7 @@ fn ld_sprite_x() {
 // The interpreter takes the decimal value of Vx, and places the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.
 #[test]
 fn ld_bcd_x() {
-    let mut chip = reg!(0 = 123);
+    let mut chip = preset!(0 = 123);
 
     chip.mem.i = 0x300;
     chip.exec(0xF033).unwrap();
