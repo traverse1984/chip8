@@ -6,7 +6,7 @@ use crate::vm::mem::{Load, Mem, Ram, SPRITES};
 use super::error::{Error, Result};
 use crate::hal::{Buzzer, Delay, Keypad, Rng, Screen};
 
-use crate::inst::Opcode;
+use crate::inst::{bytecode::decode, Opcode};
 
 #[cfg(test)]
 mod tests;
@@ -109,12 +109,11 @@ where
         keypad.read_key(delay).map_err(|e| e.into().into())
     }
 
-    fn exec(&mut self, instruction: u16) -> Result {
-        let cmd = instruction >> 12;
-        let addr = instruction & 0x0FFF;
-        let byte = addr as u8;
-        let nibble = byte & 0xF;
-        let vx_addr = (addr >> 8) as u8;
+    fn exec(&mut self, inst: u16) -> Result {
+        let addr = decode::addr(inst);
+        let byte = decode::byte(inst);
+        let nibble = decode::nibble(inst);
+        let vx_reg = decode::vx(inst);
 
         let Mem {
             i,
@@ -126,7 +125,7 @@ where
             ram,
         } = &mut self.mem;
 
-        let vx = reg.get(vx_addr)?;
+        let vx = reg.get(vx_reg)?;
         let vy = reg.get(byte >> 4)?;
 
         /// Set or increment the program counter
@@ -152,14 +151,14 @@ where
             }};
 
             ($val: expr $(, vf = $flag: expr)?) => {{
-                reg.set(vx_addr, $val)?;
+                reg.set(vx_reg, $val)?;
                 $( reg.set(REG_FLAG, $flag)?; )?
             }};
         }
 
-        let opcode = match Opcode::decode(instruction) {
+        let opcode = match Opcode::decode(inst) {
             Some(opcode) => opcode,
-            None => return Err(Error::Instruction(instruction)),
+            None => return Err(Error::Instruction(inst)),
         };
 
         use Opcode::*;
@@ -227,16 +226,16 @@ where
                 ram.write_byte(i.saturating_add(2), vx % 10)?;
             }
             Sviv => {
-                for loc in 0..=vx_addr {
+                for loc in 0..=vx_reg {
                     let val = reg.get(loc)?;
                     ram.write_byte(i.saturating_add(loc.into()), val)?;
                 }
             }
             Ldiv => {
                 for (&val, loc) in ram
-                    .read_bytes(*i, vx_addr as u16 + 1)?
+                    .read_bytes(*i, vx_reg as u16 + 1)?
                     .iter()
-                    .zip(0..=vx_addr)
+                    .zip(0..=vx_reg)
                 {
                     reg.set(loc, val)?;
                 }
