@@ -14,6 +14,13 @@ macro_rules! chip8_inst {
     };
 }
 
+// An instruction
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Instruction {
+    opcode: Opcode,
+    operands: Operands,
+}
+
 macro_rules! instruction_set {
     (
         $(
@@ -65,12 +72,12 @@ macro_rules! instruction_set {
         #[cfg(test)]
         #[allow(overflowing_literals)]
         mod ops_tests {
-            use $crate::inst::bytecode::bc;
+            use $crate::inst::bytecode::{encode, decode};
             use super::{ops, Instruction, Operands, Opcode};
 
             macro_rules! test_arg {
                 ($argn: ident) => {
-                    bc!(decode $argn bc!(encode $argn 0x0ABC));
+                    decode::$argn(encode::$argn(0x0ABC))
                 };
             }
 
@@ -100,7 +107,7 @@ macro_rules! op {
         #[$doc]
         #[inline]
         pub fn $name( $( $($arg: $type),+ )? ) -> u16 {
-            $crate::inst::bytecode::bc!( opcode $code; $( $($arg $arg),+ )? )
+            $code $(| $( $crate::inst::bytecode::encode::$arg($arg) )|+ )?
         }
     };
 }
@@ -108,7 +115,7 @@ macro_rules! op {
 macro_rules! operands {
     ($($arg: ident)+ = $variant: ident $inst: expr) => {
         Operands::$variant(
-            $( $crate::inst::bytecode::bc!(decode $arg $inst) ),+
+            $( $crate::inst::bytecode::decode::$arg($inst) ),+
         )
     };
 
@@ -206,13 +213,6 @@ instruction_set! {
     0xF055 Sviv = sviv [vx u8];
     /// Read registers `v0` through `vx` from memory starting at location **I**.
     0xF065 Ldiv = ldiv [vx u8];
-}
-
-// An instruction
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Instruction {
-    opcode: Opcode,
-    operands: Operands,
 }
 
 impl Instruction {

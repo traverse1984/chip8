@@ -6,7 +6,7 @@ use crate::vm::mem::{Load, Mem, Ram, SPRITES};
 use super::error::{Error, Result};
 use crate::hal::{Buzzer, Delay, Keypad, Rng, Screen};
 
-use crate::inst::{bytecode::bc, Opcode};
+use crate::inst::{bytecode::decode, Opcode};
 
 #[cfg(test)]
 mod tests;
@@ -110,9 +110,10 @@ where
     }
 
     fn exec(&mut self, inst: u16) -> Result {
-        let (addr, vx_reg, vy_reg, byte, nibble) = bc! {
-            with inst; decode addr, vx, vy, byte, nibble
-        };
+        let addr = decode::addr(inst);
+        let vx_reg = decode::vx(inst);
+        let vy_reg = decode::vy(inst);
+        let byte = decode::byte(inst);
 
         let Mem {
             i,
@@ -191,7 +192,7 @@ where
             Jp0 => jump!(addr + reg.get(0)? as u16),
             Rnd => set!(byte & self.rng.random().map_err(|e| e.into())?),
             Drw => {
-                let data = ram.read_bytes(*i, nibble as u16)?;
+                let data = ram.read_bytes(*i, decode::nibble(inst) as u16)?;
                 let erased = self.screen.draw(vx, vy, data).map_err(|e| e.into())?;
                 set!(vf = erased as u8);
             }
