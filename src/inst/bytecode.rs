@@ -1,3 +1,4 @@
+// Mask and encode operands to add to an instruction
 pub mod encode {
     #[inline]
     pub fn addr(addr: u16) -> u16 {
@@ -24,6 +25,7 @@ pub mod encode {
     }
 }
 
+// Decode an instruction back into operands
 pub mod decode {
     #[inline]
     pub fn addr(inst: u16) -> u16 {

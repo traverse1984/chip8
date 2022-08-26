@@ -1,3 +1,4 @@
+use super::macros::chip8_instruction_set;
 use core::fmt;
 
 #[macro_export]
@@ -14,137 +15,7 @@ macro_rules! chip8_inst {
     };
 }
 
-// An instruction
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Instruction {
-    opcode: Opcode,
-    operands: Operands,
-}
-
-macro_rules! instruction_set {
-    (
-        $(
-            #[$doc: meta]
-            $code: literal $name: ident = $op: ident
-            $( [ $($arg: ident $type: ty),+ ] )?;
-        )+
-    ) => {
-        pub mod ops {
-            $(
-                op! {
-                    #[$doc]
-                    $op ( $( $($arg $type),+ )? ) -> $code
-                }
-            )+
-        }
-
-        /// An opcode
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        #[non_exhaustive]
-        #[repr(u16)]
-        pub enum Opcode {
-            $( #[$doc] $name = $code, )+
-        }
-
-        impl Opcode {
-            pub fn name(&self) -> &'static str {
-                match self {
-                    $( Self::$name => stringify!($op), )+
-                }
-            }
-        }
-
-        impl Instruction {
-            pub fn decode(inst: u16) -> Option<Self> {
-                use Opcode::*;
-
-                Some(match Opcode::decode(inst)? {
-                    $(
-                        opcode @ $name => Instruction {
-                            opcode,
-                            operands: operands!( $( $($arg)+ )?; inst ),
-                        },
-                    )+
-                })
-            }
-        }
-
-        #[cfg(test)]
-        #[allow(overflowing_literals)]
-        mod ops_tests {
-            use $crate::inst::bytecode::{encode, decode};
-            use super::{ops, Instruction, Operands, Opcode};
-
-            macro_rules! test_arg {
-                ($argn: ident) => {
-                    decode::$argn(encode::$argn(0x0ABC))
-                };
-            }
-
-            $(
-                #[test]
-                fn $op() {
-                    $( $( let $arg = test_arg!($arg); )+ )?
-                    let inst = ops::$op( $( $($arg),+ )? );
-                    let operands = operands!( $( $($arg)+ )?; inst );
-                    let decoded = Instruction::decode(inst).unwrap();
-
-                    assert_eq!(decoded.code(), $code);
-                    assert_eq!(decoded.opcode(), &Opcode::$name);
-                    assert_eq!(decoded.name(), stringify!($op));
-                    assert_eq!(decoded.operands(), &operands);
-                }
-            )+
-        }
-    };
-}
-
-macro_rules! op {
-    (
-        #[$doc: meta]
-        $name: ident ( $( $($arg: ident $type: ty),+ )? ) -> $code: literal
-    ) => {
-        #[$doc]
-        #[inline]
-        pub fn $name( $( $($arg: $type),+ )? ) -> u16 {
-            $code $(| $( $crate::inst::bytecode::encode::$arg($arg) )|+ )?
-        }
-    };
-}
-
-macro_rules! operands {
-    ($($arg: ident)+ = $variant: ident $inst: expr) => {
-        Operands::$variant(
-            $( $crate::inst::bytecode::decode::$arg($inst) ),+
-        )
-    };
-
-    (; $inst: expr) => {
-        Operands::Exact
-    };
-
-    (addr; $inst: expr) => {
-        operands!(addr = Addr $inst)
-    };
-
-    (vx; $inst: expr) => {
-        operands!(vx = Vx $inst)
-    };
-
-    (vx vy; $inst: expr) => {
-        operands!(vx vy = VxVy $inst)
-    };
-
-    (vx byte; $inst: expr) => {
-        operands!(vx byte = VxByte $inst)
-    };
-
-    (vx vy nibble; $inst: expr) => {
-        operands!(vx vy nibble = VxVyNibble $inst)
-    };
-}
-
-instruction_set! {
+chip8_instruction_set! {
     /// Clear the display.
     0x00E0 Cls = cls;
     /// Return from a subroutine.
@@ -215,24 +86,6 @@ instruction_set! {
     0xF065 Ldiv = ldiv [vx u8];
 }
 
-impl Instruction {
-    pub fn code(&self) -> u16 {
-        self.opcode as u16
-    }
-
-    pub fn name(&self) -> &'static str {
-        self.opcode.name()
-    }
-
-    pub fn opcode(&self) -> &Opcode {
-        &self.opcode
-    }
-
-    pub fn operands(&self) -> &Operands {
-        &self.operands
-    }
-}
-
 impl Opcode {
     /// Attempt to decode an instruction from bytecode.
     pub fn decode(inst: u16) -> Option<Self> {
@@ -284,42 +137,15 @@ impl Opcode {
     }
 }
 
-/// Operands for an instruction.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Operands {
-    /// An instruction which accepts no operands.
-    Exact,
-    /// An instruction which expects address `addr`.
-    Addr(u16),
-    /// An instruction which expects register `vx`.
-    Vx(u8),
-    /// An instruction which expects registers `vx` and `vy`.
-    VxVy(u8, u8),
-    /// An instruction which expects register `vx` and a `byte` of data.
-    VxByte(u8, u8),
-    /// An instruction which expects registers `vx`, `vy` and a `nibble` of
-    /// data. In the chip8 instruction set, only `drw` has this signature.
-    VxVyNibble(u8, u8, u8),
-}
-
-impl fmt::Display for Operands {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Operands::*;
-        match self {
-            Exact => Ok(()),
-            Addr(addr) => write!(f, "{:03X}", addr),
-            Vx(vx) => write!(f, "{:X}", vx),
-            VxVy(vx, vy) => write!(f, "{:X}, {:X}", vx, vy),
-            VxByte(vx, byte) => write!(f, "{:X}, {:02X}", vx, byte),
-            VxVyNibble(vx, vy, nibble) => write!(f, "{:X}, {:X}, {:X}", vx, vy, nibble),
-        }
-    }
-}
-
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.opcode.name(), self.operands)
+    }
+}
+
+impl fmt::Display for Opcode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.name().fmt(f)
     }
 }
 
