@@ -32,7 +32,7 @@ impl Stack {
                 Ok(())
             }
             15 => Err(Error::StackOverflow { frame }),
-            _ => unreachable!(),
+            _ => Err(Error::StackCorrupt { sp: self.sp }),
         }
     }
 
@@ -44,7 +44,7 @@ impl Stack {
                 Ok(ptr)
             }
             0xFF => Err(Error::StackEmpty),
-            _ => unreachable!(),
+            _ => Err(Error::StackCorrupt { sp: self.sp }),
         }
     }
 }

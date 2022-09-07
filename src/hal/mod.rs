@@ -1,7 +1,7 @@
 mod hal;
 pub use hal::*;
 
-#[cfg(test)]
+//#[cfg(test)]
 #[macro_use]
 pub mod mocks;
 
@@ -10,3 +10,6 @@ pub use mocks::ScreenCommand;
 
 #[cfg(test)]
 pub(super) use chip;
+
+mod generic;
+mod hal2;

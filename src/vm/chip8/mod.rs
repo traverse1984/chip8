@@ -3,8 +3,8 @@ use timer::Timer;
 
 use crate::vm::mem::{Load, Mem, Ram, SPRITES};
 
-use super::error::{Error, Result};
-use crate::hal::{Buzzer, Delay, Keypad, Rng, Screen};
+use super::error::{Error, Result, RuntimeError, RuntimeResult};
+use crate::hal::{Buzzer, Delay, Hardware, Keypad, Rng, Screen};
 
 use crate::inst::{bytecode::decode, Opcode};
 
@@ -15,30 +15,11 @@ const POLL_FREQ: u32 = 1000;
 const INST_STEP: u16 = 2;
 const REG_FLAG: u8 = 0x0F;
 
-pub struct Chip8<S, K, B, R, D>
-where
-    S: Screen,
-    K: Keypad,
-    B: Buzzer,
-    R: Rng,
-    D: Delay,
-{
-    screen: S,
-    keypad: K,
-    buzzer: B,
-    rng: R,
-    delay: D,
+pub struct Chip8 {
     mem: Mem,
 }
 
-impl<S, K, B, R, D> Chip8<S, K, B, R, D>
-where
-    S: Screen,
-    K: Keypad,
-    B: Buzzer,
-    R: Rng,
-    D: Delay,
-{
+impl Chip8 {
     // pub fn main<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Result<u16> {
     //     self.sub(0x200, program)
     // }
@@ -51,10 +32,6 @@ where
     //     self.mem.ram.load(addr, data)?;
     //     Ok(addr)
     // }
-
-    pub fn screen(&mut self) -> &mut S {
-        &mut self.screen
-    }
 
     pub fn load(mut self, ram: Ram) -> Self {
         self.mem = Mem::from(ram);
@@ -70,7 +47,7 @@ where
         self.read_inst(self.mem.pc).and_then(|inst| self.exec(inst))
     }
 
-    pub fn run(&mut self, hz: u32) -> Result {
+    pub fn run<H: Hardware<E>, E>(&mut self, hz: u32, hardware: &mut H) -> RuntimeResult<E> {
         let tick = if hz >= 60 {
             Timer::hertz_to_us(hz).ok_or(Error::ClockSpeed(hz))
         } else {
@@ -90,7 +67,7 @@ where
             }
 
             self.step()?;
-            self.delay.delay_us(tick).map_err(|e| e.into())?;
+            hardware.delay_us(tick);
         }
     }
 
@@ -105,8 +82,8 @@ where
         }
     }
 
-    fn read_key(keypad: &mut K, delay: &mut D) -> Result<Option<u8>> {
-        keypad.read_key(delay).map_err(|e| e.into().into())
+    fn read_key<H: Hardware<E>, E>(hardware: &mut H) -> RuntimeResult<E, Option<u8>> {
+        hardware.read_key(hardware)
     }
 
     fn exec(&mut self, inst: u16) -> Result {
@@ -247,43 +224,18 @@ where
     }
 }
 
-impl<S, K, B, R, D> Chip8<S, K, B, R, D>
-where
-    S: Screen,
-    K: Keypad,
-    B: Buzzer,
-    R: Rng,
-    D: Delay,
-{
-    pub fn new(screen: S, keypad: K, buzzer: B, rng: R, delay: D) -> Self {
-        Self::from_state(screen, keypad, buzzer, rng, delay, Mem::default())
+impl Chip8 {
+    pub fn new() -> Self {
+        Self {
+            mem: Mem::default(),
+        }
     }
 
-    pub fn from_state(screen: S, keypad: K, buzzer: B, rng: R, delay: D, mem: Mem) -> Self {
-        Self {
-            mem,
-            screen,
-            keypad,
-            buzzer,
-            rng,
-            delay,
-        }
+    pub fn from_state(mem: Mem) -> Self {
+        Self { mem }
     }
 
     pub fn state(&self) -> &Mem {
         &self.mem
-    }
-
-    pub fn free(self) -> (S, K, B, R, D, Mem) {
-        let Chip8 {
-            screen,
-            keypad,
-            buzzer,
-            rng,
-            delay,
-            mem,
-        } = self;
-
-        (screen, keypad, buzzer, rng, delay, mem)
     }
 }

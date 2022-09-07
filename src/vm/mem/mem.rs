@@ -12,6 +12,7 @@ pub enum Error {
     NotAligned { pc: u16 },
     LoadTooLong { addr: u16, len: usize },
     StackOverflow { frame: u16 },
+    StackCorrupt { sp: u8 },
     StackEmpty,
 }
 
