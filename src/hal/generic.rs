@@ -83,7 +83,8 @@ where
     }
 }
 
-impl<Timer, Screen, Keypad, Buzzer, Rng> Hwg for GenericHardware<Timer, Screen, Keypad, Buzzer, Rng>
+impl<Timer, Screen, Keypad, Buzzer, Rng> HardwareExt
+    for GenericHardware<Timer, Screen, Keypad, Buzzer, Rng>
 where
     Timer: TimerExt,
     Screen: ScreenExt,

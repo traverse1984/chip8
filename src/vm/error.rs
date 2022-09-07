@@ -31,3 +31,9 @@ impl<E> From<Error> for RuntimeError<E> {
         RuntimeError::Software(err)
     }
 }
+
+impl<E> From<mem::Error> for RuntimeError<E> {
+    fn from(err: mem::Error) -> Self {
+        RuntimeError::Software(Error::Memory(err))
+    }
+}

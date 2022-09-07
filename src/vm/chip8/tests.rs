@@ -1,10 +1,14 @@
 extern crate std;
+use super::Chip8;
 use super::Error;
 use super::{INST_STEP, REG_FLAG};
 use crate::hal::{chip, ScreenCommand};
+use crate::hal::{Hardware, HardwareExt};
 use crate::inst::ops;
 use crate::vm::mem::{self, Load};
 use std::vec;
+
+use crate::hal::mocks::Peripherals;
 
 // Create a Chip8 mock with some preset registers
 macro_rules! preset {
@@ -56,7 +60,7 @@ fn cls() {
     let mut chip = chip!();
 
     exec!(chip cls);
-    let (screen, ..) = chip.free();
+    let Hardware { screen, .. } = chip.hardware();
     assert_eq!(screen.commands, vec![ScreenCommand::Clear])
 }
 
@@ -295,7 +299,7 @@ fn drw_x_y_n() {
     let data = [0x01, 0x02, 0x03, 0x04];
     let (x, y) = (5, 10);
 
-    chip.screen.set_collision(true);
+    chip.screen().set_collision(true);
     chip.mem.reg.set(0, x).unwrap();
     chip.mem.reg.set(1, y).unwrap();
     chip.mem.ram.load(0x300, &data).unwrap();
@@ -304,7 +308,7 @@ fn drw_x_y_n() {
 
     assert_eq!(reg!(chip REG_FLAG), 1);
     assert_eq!(
-        chip.screen.commands,
+        chip.screen().commands,
         vec![ScreenCommand::Draw {
             x,
             y,
@@ -312,7 +316,7 @@ fn drw_x_y_n() {
         }]
     );
 
-    chip.screen.set_collision(false);
+    chip.screen().set_collision(false);
     chip.exec(0xD014).unwrap();
 
     assert_eq!(reg!(chip REG_FLAG), 0);

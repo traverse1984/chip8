@@ -13,11 +13,11 @@ pub(crate) mod prelude {
 pub mod io;
 
 pub mod hal;
-//mod program;
+mod program;
 
 pub mod inst;
 
-//pub mod vm;
+pub mod vm;
 
-//pub use program::*;
-//pub use vm::Chip8;
+pub use program::*;
+pub use vm::Chip8;

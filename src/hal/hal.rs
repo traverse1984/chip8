@@ -1,4 +1,4 @@
-pub trait Hwg
+pub trait HardwareExt
 where
     Self::Timer: TimerExt<Error = Self::Error>,
     Self::Screen: ScreenExt<Error = Self::Error>,

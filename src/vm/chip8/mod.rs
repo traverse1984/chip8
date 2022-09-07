@@ -1,10 +1,12 @@
 mod timer;
+use core::ops::{Deref, DerefMut};
+
 use timer::Timer;
 
 use crate::vm::mem::{Load, Mem, Ram, SPRITES};
 
 use super::error::{Error, Result, RuntimeError, RuntimeResult};
-use crate::hal::{Buzzer, Delay, Hardware, Keypad, Rng, Screen};
+use crate::hal::{BuzzerExt, Hardware, HardwareExt, KeypadExt, RngExt, ScreenExt, TimerExt};
 
 use crate::inst::{bytecode::decode, Opcode};
 
@@ -14,6 +16,74 @@ mod tests;
 const POLL_FREQ: u32 = 1000;
 const INST_STEP: u16 = 2;
 const REG_FLAG: u8 = 0x0F;
+
+pub struct Chip8WithHardware<H: HardwareExt> {
+    chip: Chip8,
+    hw: H,
+}
+
+impl<H: HardwareExt> HardwareExt for Chip8WithHardware<H> {
+    type Error = H::Error;
+    type Timer = H::Timer;
+    type Screen = H::Screen;
+    type Keypad = H::Keypad;
+    type Buzzer = H::Buzzer;
+    type Rng = H::Rng;
+
+    fn hardware(
+        &mut self,
+    ) -> Hardware<'_, Self::Timer, Self::Screen, Self::Keypad, Self::Buzzer, Self::Rng> {
+        self.hw.hardware()
+    }
+}
+
+impl<H: HardwareExt> Chip8WithHardware<H> {
+    pub fn new(hw: H) -> Self {
+        Self {
+            chip: Chip8::new(),
+            hw,
+        }
+    }
+
+    pub fn from_state(hw: H, mem: Mem) -> Self {
+        Self {
+            chip: Chip8::from_state(mem),
+            hw,
+        }
+    }
+
+    pub fn hw(&mut self) -> &mut H {
+        &mut self.hw
+    }
+
+    pub fn run(&mut self, hz: u32) -> RuntimeResult<H::Error> {
+        let Self { chip, hw } = self;
+        chip.run(hz, hw)
+    }
+
+    pub fn step(&mut self) -> RuntimeResult<H::Error> {
+        let Self { chip, hw } = self;
+        chip.step(hw)
+    }
+
+    pub fn exec(&mut self, inst: u16) -> RuntimeResult<H::Error> {
+        let Self { chip, hw } = self;
+        chip.exec(inst, hw)
+    }
+}
+
+impl<H: HardwareExt> Deref for Chip8WithHardware<H> {
+    type Target = Chip8;
+    fn deref(&self) -> &Self::Target {
+        &self.chip
+    }
+}
+
+impl<H: HardwareExt> DerefMut for Chip8WithHardware<H> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.chip
+    }
+}
 
 pub struct Chip8 {
     mem: Mem,
@@ -43,11 +113,12 @@ impl Chip8 {
         self.mem.pc = 0x200;
     }
 
-    pub fn step(&mut self) -> Result {
-        self.read_inst(self.mem.pc).and_then(|inst| self.exec(inst))
+    pub fn step<H: HardwareExt>(&mut self, hw: &mut H) -> RuntimeResult<H::Error> {
+        let inst = self.read_inst(self.mem.pc)?;
+        self.exec(inst, hw)
     }
 
-    pub fn run<H: Hardware<E>, E>(&mut self, hz: u32, hardware: &mut H) -> RuntimeResult<E> {
+    pub fn run<H: HardwareExt>(&mut self, hz: u32, hw: &mut H) -> RuntimeResult<H::Error> {
         let tick = if hz >= 60 {
             Timer::hertz_to_us(hz).ok_or(Error::ClockSpeed(hz))
         } else {
@@ -66,8 +137,8 @@ impl Chip8 {
                 self.mem.st -= 1;
             }
 
-            self.step()?;
-            hardware.delay_us(tick);
+            self.step(hw)?;
+            hw.timer().delay_us(tick).map_err(RuntimeError::Hardware)?;
         }
     }
 
@@ -82,11 +153,13 @@ impl Chip8 {
         }
     }
 
-    fn read_key<H: Hardware<E>, E>(hardware: &mut H) -> RuntimeResult<E, Option<u8>> {
-        hardware.read_key(hardware)
+    fn read_key<H: HardwareExt>(hw: &mut H) -> RuntimeResult<H::Error, Option<u8>> {
+        let Hardware { keypad, timer, .. } = hw.hardware();
+
+        keypad.read_key(timer).map_err(RuntimeError::Hardware)
     }
 
-    fn exec(&mut self, inst: u16) -> Result {
+    fn exec<H: HardwareExt>(&mut self, inst: u16, hw: &mut H) -> RuntimeResult<H::Error> {
         let addr = decode::addr(inst);
         let vx_reg = decode::vx(inst);
         let vy_reg = decode::vy(inst);
@@ -135,12 +208,12 @@ impl Chip8 {
 
         let opcode = match Opcode::decode(inst) {
             Some(opcode) => opcode,
-            None => return Err(Error::Instruction(inst)),
+            None => return Err(Error::Instruction(inst))?,
         };
 
         use Opcode::*;
         match opcode {
-            Cls => self.screen.clear().map_err(|e| e.into())?,
+            Cls => hw.screen().clear().map_err(RuntimeError::Hardware)?,
             Ret => jump!(stack.pop()? + 2),
             Jp => jump!(addr),
             Call => {
@@ -167,28 +240,33 @@ impl Chip8 {
             Snev => skip!(vx != vy),
             Ldi => *i = addr,
             Jp0 => jump!(addr + reg.get(0)? as u16),
-            Rnd => set!(byte & self.rng.random().map_err(|e| e.into())?),
+            Rnd => set!(byte & hw.rng().rand().map_err(RuntimeError::Hardware)?),
             Drw => {
                 let data = ram.read_bytes(*i, decode::nibble(inst) as u16)?;
-                let erased = self.screen.draw(vx, vy, data).map_err(|e| e.into())?;
+                let erased = hw
+                    .screen()
+                    .draw(vx, vy, data)
+                    .map_err(RuntimeError::Hardware)?;
                 set!(vf = erased as u8);
             }
-            Skp => match Self::read_key(&mut self.keypad, &mut self.delay)? {
+            Skp => match Self::read_key(hw)? {
                 Some(key) => skip!(key == vx),
                 _ => (),
             },
-            Sknp => match Self::read_key(&mut self.keypad, &mut &mut self.delay)? {
+            Sknp => match Self::read_key(hw)? {
                 Some(key) => skip!(key != vx),
                 _ => (),
             },
             Lddtv => set!(*dt),
             Ldkey => {
                 let key = loop {
-                    if let Some(key) = Self::read_key(&mut self.keypad, &mut self.delay)? {
+                    if let Some(key) = Self::read_key(hw)? {
                         break key;
                     }
 
-                    self.delay.delay_us(POLL_FREQ).map_err(|e| e.into())?;
+                    hw.timer()
+                        .delay_us(POLL_FREQ)
+                        .map_err(RuntimeError::Hardware)?;
                 };
 
                 set!(key);

@@ -2,19 +2,11 @@ extern crate std;
 use crate::hal::{generic, BuzzerExt, KeypadExt, RngExt, ScreenExt, TimerExt};
 use std::{vec, vec::Vec};
 
-use super::Hwg;
+use super::{Hardware, HardwareExt};
 
 macro_rules! chip {
     (@make $peri: expr) => {{
-        let crate::hal::mocks::Peripherals {
-            screen,
-            keypad,
-            buzzer,
-            rng,
-            delay
-        } = $peri;
-
-        crate::vm::Chip8::new(screen, keypad, buzzer, rng, delay)
+        crate::vm::Chip8WithHardware::new($peri)
     }};
 
     () => {
@@ -39,6 +31,27 @@ pub struct Peripherals {
     pub buzzer: MockBuzzer,
     pub rng: MockRng,
     pub delay: MockDelay,
+}
+
+impl HardwareExt for Peripherals {
+    type Error = ();
+    type Timer = MockDelay;
+    type Screen = MockScreen;
+    type Keypad = MockKeypad;
+    type Buzzer = MockBuzzer;
+    type Rng = MockRng;
+
+    fn hardware(
+        &mut self,
+    ) -> super::Hardware<'_, Self::Timer, Self::Screen, Self::Keypad, Self::Buzzer, Self::Rng> {
+        Hardware {
+            timer: &mut self.delay,
+            screen: &mut self.screen,
+            keypad: &mut self.keypad,
+            buzzer: &mut self.buzzer,
+            rng: &mut self.rng,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
