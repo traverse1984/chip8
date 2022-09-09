@@ -1,5 +1,7 @@
+mod hw;
 mod timer;
-use core::ops::{Deref, DerefMut};
+
+pub use hw::HwChip8;
 
 use timer::Timer;
 
@@ -16,74 +18,6 @@ mod tests;
 const POLL_FREQ: u32 = 1000;
 const INST_STEP: u16 = 2;
 const REG_FLAG: u8 = 0x0F;
-
-pub struct Chip8WithHardware<H: HardwareExt> {
-    chip: Chip8,
-    hw: H,
-}
-
-impl<H: HardwareExt> HardwareExt for Chip8WithHardware<H> {
-    type Error = H::Error;
-    type Timer = H::Timer;
-    type Screen = H::Screen;
-    type Keypad = H::Keypad;
-    type Buzzer = H::Buzzer;
-    type Rng = H::Rng;
-
-    fn hardware(
-        &mut self,
-    ) -> Hardware<'_, Self::Timer, Self::Screen, Self::Keypad, Self::Buzzer, Self::Rng> {
-        self.hw.hardware()
-    }
-}
-
-impl<H: HardwareExt> Chip8WithHardware<H> {
-    pub fn new(hw: H) -> Self {
-        Self {
-            chip: Chip8::new(),
-            hw,
-        }
-    }
-
-    pub fn from_state(hw: H, mem: Mem) -> Self {
-        Self {
-            chip: Chip8::from_state(mem),
-            hw,
-        }
-    }
-
-    pub fn hw(&mut self) -> &mut H {
-        &mut self.hw
-    }
-
-    pub fn run(&mut self, hz: u32) -> RuntimeResult<H::Error> {
-        let Self { chip, hw } = self;
-        chip.run(hz, hw)
-    }
-
-    pub fn step(&mut self) -> RuntimeResult<H::Error> {
-        let Self { chip, hw } = self;
-        chip.step(hw)
-    }
-
-    pub fn exec(&mut self, inst: u16) -> RuntimeResult<H::Error> {
-        let Self { chip, hw } = self;
-        chip.exec(inst, hw)
-    }
-}
-
-impl<H: HardwareExt> Deref for Chip8WithHardware<H> {
-    type Target = Chip8;
-    fn deref(&self) -> &Self::Target {
-        &self.chip
-    }
-}
-
-impl<H: HardwareExt> DerefMut for Chip8WithHardware<H> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.chip
-    }
-}
 
 pub struct Chip8 {
     mem: Mem,
@@ -307,6 +241,10 @@ impl Chip8 {
         Self {
             mem: Mem::default(),
         }
+    }
+
+    pub fn with_hardware<H: HardwareExt>(self, hw: H) -> HwChip8<H> {
+        HwChip8::new(hw)
     }
 
     pub fn from_state(mem: Mem) -> Self {

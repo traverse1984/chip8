@@ -1,93 +1,100 @@
-pub trait HardwareExt
-where
-    Self::Timer: TimerExt<Error = Self::Error>,
-    Self::Screen: ScreenExt<Error = Self::Error>,
-    Self::Keypad: KeypadExt<Error = Self::Error>,
-    Self::Buzzer: BuzzerExt<Error = Self::Error>,
-    Self::Rng: RngExt<Error = Self::Error>,
-{
-    type Error;
-    type Timer;
-    type Screen;
-    type Keypad;
-    type Buzzer;
-    type Rng;
+use super::macros::hal;
 
-    fn hardware(
-        &mut self,
-    ) -> Hardware<'_, Self::Timer, Self::Screen, Self::Keypad, Self::Buzzer, Self::Rng>;
+hal! {
+    /// Timer
+    impl timer
+    where
+        Timer: TimerExt,
+        Screen: ScreenExt,
+        Keypad: KeypadExt,
+        Buzzer: BuzzerExt,
+        Rng: RngExt
+    {
+        type Timer;
+        trait TimerExt;
+        struct TimerWrapper;
 
-    fn timer(&mut self) -> &mut Self::Timer {
-        self.hardware().timer
-    }
+        /// Pause execution for a number of microseconds
+        fn delay_us(&mut self, us: u32) -> ();
 
-    fn screen(&mut self) -> &mut Self::Screen {
-        self.hardware().screen
-    }
+        /// Reset the timers 60Hz ticks to 0 and return the number
+        /// that had elapsed.
+        fn reset_ticks(&mut self) -> u8;
+    };
 
-    fn keypad(&mut self) -> &mut Self::Keypad {
-        self.hardware().keypad
-    }
+    /// Screen
+    impl screen
+    where
+        Timer: TimerExt,
+        Screen: ScreenExt,
+        Keypad: KeypadExt,
+        Buzzer: BuzzerExt,
+        Rng: RngExt
+    {
+        type Screen;
+        trait ScreenExt;
+        struct ScreenWrapper;
 
-    fn buzzer(&mut self) -> &mut Self::Buzzer {
-        self.hardware().buzzer
-    }
+        /// XOR the [&\[u8\]](`u8`) into the current display starting at position
+        /// `(x,y)`, then update the display. Returns a boolean indicating whether
+        /// pixels were erased by this operation.
+        fn draw(&mut self, x: u8, y: u8, data: &[u8]) -> bool;
 
-    fn rng(&mut self) -> &mut Self::Rng {
-        self.hardware().rng
-    }
-}
+        /// Clear the entire display
+        fn clear(&mut self) -> ();
+    };
 
-pub struct Hardware<'a, Timer, Screen, Keypad, Buzzer, Rng>
-where
-    Timer: TimerExt,
-    Screen: ScreenExt,
-    Keypad: KeypadExt,
-    Buzzer: BuzzerExt,
-    Rng: RngExt,
-{
-    pub timer: &'a mut Timer,
-    pub screen: &'a mut Screen,
-    pub keypad: &'a mut Keypad,
-    pub buzzer: &'a mut Buzzer,
-    pub rng: &'a mut Rng,
-}
+    /// Keypad
+    impl keypad
+    where
+        Timer: TimerExt,
+        Screen: ScreenExt,
+        Keypad: KeypadExt,
+        Buzzer: BuzzerExt,
+        Rng: RngExt
+    {
+        type Keypad;
+        trait KeypadExt;
+        struct KeypadWrapper;
 
-pub trait TimerExt {
-    type Error;
+        /// Returns true if any key is pressed, false otherwise.
+        fn key_is_pressed(&mut self) -> bool;
 
-    fn delay_us(&mut self, us: u32) -> Result<(), Self::Error>;
-    fn reset_ticks(&mut self) -> Result<u8, Self::Error>;
-}
+        /// Try to determine which key is pressed (if any).
+        fn read_key<Tm: TimerExt>(&mut self, timer: &mut Tm) -> Option<u8>;
+    };
 
-/// Screen
-pub trait ScreenExt {
-    type Error;
-    /// XOR the [&\[u8\]](`u8`) into the current display starting at position
-    /// `(x,y)`, then update the display. Returns a boolean indicating whether
-    /// pixels were erased by this operation.
-    fn draw(&mut self, x: u8, y: u8, data: &[u8]) -> Result<bool, Self::Error>;
-    /// Clear the entire display
-    fn clear(&mut self) -> Result<(), Self::Error>;
-}
+    /// Buzzer
+    impl buzzer
+    where
+        Timer: TimerExt,
+        Screen: ScreenExt,
+        Keypad: KeypadExt,
+        Buzzer: BuzzerExt,
+        Rng: RngExt
+    {
+        type Buzzer;
+        trait BuzzerExt;
+        struct BuzzerWrapper;
 
-/// Keypad
-pub trait KeypadExt {
-    type Error;
-    /// Returns true if any key is pressed, false otherwise.
-    fn key_is_pressed(&self) -> Result<bool, Self::Error>;
-    /// Try to determine which key is pressed (if any).
-    fn read_key<T: TimerExt>(&mut self, timer: &mut T) -> Result<Option<u8>, Self::Error>;
-}
+        /// Set the state of the buzzer, true being on and false being off.
+        fn set_state(&mut self, state: bool) -> ();
+    };
 
-/// Buzzer
-pub trait BuzzerExt {
-    type Error;
-    fn set_state(&mut self, state: bool) -> Result<(), Self::Error>;
-}
+    /// Rng
+    impl rng
+    where
+        Timer: TimerExt,
+        Screen: ScreenExt,
+        Keypad: KeypadExt,
+        Buzzer: BuzzerExt,
+        Rng: RngExt
+    {
+        type Rng;
+        trait RngExt;
+        struct RngWrapper;
 
-/// Rng
-pub trait RngExt {
-    type Error;
-    fn rand(&mut self) -> Result<u8, Self::Error>;
+        /// Generate a random byte
+        fn rand(&mut self) -> u8;
+    };
 }

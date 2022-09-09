@@ -1,7 +1,7 @@
 mod hal;
 pub use hal::*;
 
-#[cfg(test)]
+// #[cfg(test)]
 #[macro_use]
 pub mod mocks;
 
@@ -11,5 +11,4 @@ pub(crate) use chip;
 #[cfg(test)]
 pub use mocks::ScreenCommand;
 
-mod generic;
-mod hal2;
+mod macros;

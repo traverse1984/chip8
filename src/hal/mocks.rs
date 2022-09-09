@@ -1,12 +1,12 @@
 extern crate std;
-use crate::hal::{generic, BuzzerExt, KeypadExt, RngExt, ScreenExt, TimerExt};
+use crate::hal::{BuzzerExt, KeypadExt, RngExt, ScreenExt, TimerExt};
 use std::{vec, vec::Vec};
 
 use super::{Hardware, HardwareExt};
 
 macro_rules! chip {
     (@make $peri: expr) => {{
-        crate::vm::Chip8WithHardware::new($peri)
+        crate::vm::HwChip8::new($peri)
     }};
 
     () => {
@@ -116,7 +116,7 @@ impl MockKeypad {
 impl KeypadExt for MockKeypad {
     type Error = ();
 
-    fn key_is_pressed(&self) -> Result<bool, Self::Error> {
+    fn key_is_pressed(&mut self) -> Result<bool, Self::Error> {
         Ok(self.sequence.last().map_or(false, |key| key.is_some()))
     }
 
