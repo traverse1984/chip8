@@ -1,14 +1,18 @@
 mod hal;
-pub use hal::*;
-
-// #[cfg(test)]
-#[macro_use]
-pub mod mocks;
-
-#[cfg(test)]
-pub(crate) use chip;
-
-#[cfg(test)]
-pub use mocks::ScreenCommand;
-
 mod macros;
+
+pub use hal::{BuzzerExt, Hardware, HardwareExt, KeypadExt, RngExt, ScreenExt, TimerExt};
+
+pub mod generic {
+    pub use super::hal::{
+        BuzzerWrapper, GenericHardware, GenericHardwareError, KeypadWrapper, RngWrapper,
+        ScreenWrapper, TimerWrapper,
+    };
+}
+
+#[cfg(test)]
+pub mod mocks {
+    pub use super::hal::{
+        MockBuzzer, MockDraw, MockHardware, MockKeypad, MockRng, MockScreen, MockTimer,
+    };
+}

@@ -1,14 +1,28 @@
 extern crate std;
-use super::Chip8;
-use super::Error;
-use super::{INST_STEP, REG_FLAG};
-use crate::hal::{chip, ScreenCommand};
-use crate::hal::{Hardware, HardwareExt};
-use crate::inst::ops;
-use crate::vm::mem::{self, Load};
+use super::{HwChip8, INST_STEP, REG_FLAG};
+use crate::{
+    hal::{
+        mocks::{MockDraw, MockHardware},
+        Hardware, HardwareExt,
+    },
+    vm::mem::{self, Load},
+};
+
 use std::vec;
 
-use crate::hal::mocks::Peripherals;
+macro_rules! chip {
+    ($hw: ident => { $($prepare: tt)+ }) => {
+        HwChip8::new({
+            let mut $hw = MockHardware::default();
+            $($prepare)+
+            $hw
+        })
+    };
+
+    () => {
+        HwChip8::new(MockHardware::default())
+    };
+}
 
 // Create a Chip8 mock with some preset registers
 macro_rules! preset {
@@ -57,11 +71,15 @@ macro_rules! exec {
 
 #[test]
 fn cls() {
+    let mut p = chip!(hw => {
+        hw.screen().set_collision(true);
+    });
+
     let mut chip = chip!();
 
     exec!(chip cls);
     let Hardware { screen, .. } = chip.hardware();
-    assert_eq!(screen.commands, vec![ScreenCommand::Clear])
+    assert_eq!(screen.draws, vec![MockDraw::Clear])
 }
 
 #[test]
@@ -281,7 +299,9 @@ fn jp0_nnn() {
 
 #[test]
 fn rnd_x_kk() {
-    let mut chip = chip!(rand = [3, 2, 5]);
+    let mut chip = chip!(hw => {
+        hw.rng().set_sequence([3, 2, 5].to_vec());
+    });
 
     chip.exec(0xC0FF).unwrap();
     assert_eq!(reg!(chip 0), 3);
@@ -308,8 +328,8 @@ fn drw_x_y_n() {
 
     assert_eq!(reg!(chip REG_FLAG), 1);
     assert_eq!(
-        chip.screen().commands,
-        vec![ScreenCommand::Draw {
+        chip.screen().draws,
+        vec![MockDraw::Draw {
             x,
             y,
             data: data.to_vec()
@@ -324,7 +344,9 @@ fn drw_x_y_n() {
 
 #[test]
 fn skp_x() {
-    let mut chip = chip!(keys = [Some(1), Some(2)]);
+    let mut chip = chip!(hw => {
+        hw.keypad().set_sequence([Some(1), Some(2)].to_vec());
+    });
 
     chip.mem.reg.set(0, 1).unwrap();
     chip.exec(0xE09E).unwrap();
@@ -338,7 +360,9 @@ fn skp_x() {
 
 #[test]
 fn sknp_x() {
-    let mut chip = chip!(keys = [Some(1), Some(2)]);
+    let mut chip = chip!(hw => {
+        hw.keypad().set_sequence([Some(1), Some(2)].to_vec());
+    });
 
     chip.mem.reg.set(0, 1).unwrap();
     chip.exec(0xE0A1).unwrap();
@@ -361,7 +385,9 @@ fn ld_x_dt() {
 
 #[test]
 fn ld_x_key() {
-    let mut chip = chip!(keys = [None, None, Some(1)]);
+    let mut chip = chip!(hw => {
+        hw.keypad().set_sequence([None, None, Some(1)].to_vec());
+    });
 
     chip.exec(0xF00A).unwrap();
     assert_eq!(reg!(chip 0), 1);
