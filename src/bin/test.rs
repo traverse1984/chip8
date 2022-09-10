@@ -1,9 +1,12 @@
 use std::thread::Thread;
 
 use chip8;
+use chip8::Chip8;
 
+use chip8::hal::*;
 use chip8::io::{HalScreen, Keyboard, NilBuzzer, NilRng, ThreadDelay};
-use chip8::{hal, *};
+use chip8::vm::error::{Error, RuntimeError};
+use chip8::{hal, hal::generic::GenericHardware, *};
 
 use io::debug;
 
@@ -46,21 +49,27 @@ fn main() -> Result<(), chip8::vm::mem::Error> {
     let prog = prog.compile()?;
     hexdump(prog.ram.read_bytes(0x200, 96)?);
 
-    let mut chip = Chip8::new(
+    let chip = Chip8::new().load(prog.ram);
+    let mut chip = chip.with_hardware(GenericHardware::new(
+        ThreadDelay,
         HalScreen::new().unwrap(),
         Keyboard::new().unwrap(),
         NilBuzzer,
         NilRng,
-        ThreadDelay,
-    )
-    .load(prog.ram);
+    ));
 
     loop {
         debug::draw_frame(chip.screen());
         debug::draw_registers(*chip.state(), chip.screen());
         chip.screen().flush();
 
-        chip.step().unwrap();
+        match chip.step() {
+            Ok(_) => {}
+            Err(e) => match e {
+                RuntimeError::Hardware(e) => println!("Hardware error"),
+                RuntimeError::Software(e) => println!("{:?}", e),
+            },
+        }
         std::thread::sleep(std::time::Duration::from_millis(1000));
     }
 }

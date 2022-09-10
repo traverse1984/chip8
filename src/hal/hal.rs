@@ -1,13 +1,13 @@
-use super::macros::hal;
-
 #[cfg(test)]
 extern crate std;
 
 #[cfg(test)]
 use std::vec::Vec;
 
+use super::macros::hal;
+
 hal! {
-    /// Timer
+    /// Timer docs
     impl timer
     where
         Timer: TimerExt,
@@ -28,6 +28,7 @@ hal! {
         fn reset_ticks(&mut self) -> u8;
 
         Mock {
+            /// MockTimer docs
             #[derive(Debug, Clone, Copy)]
             struct MockTimer {
                 ticks: u8 = 0,
@@ -53,7 +54,7 @@ hal! {
         }
     }
 
-    /// Screen
+    /// Screen docs
     impl screen
     where
         Timer: TimerExt,
@@ -75,6 +76,7 @@ hal! {
         fn clear(&mut self) -> ();
 
         Mock {
+            /// MockScreen docs
             #[derive(Debug, Clone)]
             struct MockScreen {
                 collision: bool = false,
@@ -101,7 +103,7 @@ hal! {
         }
     }
 
-    /// Keypad
+    /// Keypad docs
     impl keypad
     where
         Timer: TimerExt,
@@ -121,6 +123,7 @@ hal! {
         fn read_key<Tm: TimerExt>(&mut self, timer: &mut Tm) -> Option<u8>;
 
         Mock {
+            /// MockKeypad docs
             #[derive(Debug, Clone)]
             struct MockKeypad {
                 sequence: Vec<Option<u8>> = Vec::new(),
@@ -145,7 +148,7 @@ hal! {
         }
     }
 
-    /// Buzzer
+    /// Buzzer docs
     impl buzzer
     where
         Timer: TimerExt,
@@ -162,8 +165,8 @@ hal! {
         fn set_state(&mut self, state: bool) -> ();
 
         Mock {
+            /// MockBuzzer docs
             #[derive(Debug, Clone, Copy)]
-            /// A mock buzzer
             struct MockBuzzer {
                 state: Option<bool> = None,
             }
@@ -178,7 +181,7 @@ hal! {
 
     }
 
-    /// Rng
+    /// Rng docs
     impl rng
     where
         Timer: TimerExt,
@@ -195,6 +198,7 @@ hal! {
         fn rand(&mut self) -> u8;
 
         Mock {
+            /// MockRng docs
             #[derive(Debug, Clone)]
             struct MockRng {
                 sequence: Vec<u8> = Vec::new(),

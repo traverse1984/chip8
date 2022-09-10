@@ -27,10 +27,11 @@ impl<H: HardwareExt> HardwareExt for HwChip8<H> {
 
 impl<H: HardwareExt> HwChip8<H> {
     pub(crate) fn new(hw: H) -> Self {
-        Self {
-            chip: Chip8::new(),
-            hw,
-        }
+        Self::from_chip(Chip8::new(), hw)
+    }
+
+    pub(crate) fn from_chip(chip: Chip8, hw: H) -> Self {
+        Self { chip, hw }
     }
 
     pub fn split(self) -> (Chip8, H) {

@@ -244,7 +244,7 @@ impl Chip8 {
     }
 
     pub fn with_hardware<H: HardwareExt>(self, hw: H) -> HwChip8<H> {
-        HwChip8::new(hw)
+        HwChip8::from_chip(self, hw)
     }
 
     pub fn from_state(mem: Mem) -> Self {

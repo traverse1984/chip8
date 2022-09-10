@@ -27,8 +27,8 @@ impl DerefMut for HalScreen {
     }
 }
 
-impl crate::hal::Screen for HalScreen {
-    type Error = crate::hal::Error;
+impl crate::hal::ScreenExt for HalScreen {
+    type Error = ();
 
     fn clear(&mut self) -> Result<(), Self::Error> {
         self.screen.clear();

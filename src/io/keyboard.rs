@@ -1,4 +1,4 @@
-use crate::hal::Keypad;
+use crate::hal::KeypadExt;
 use device_query::{DeviceQuery, DeviceState, Keycode};
 
 use std::panic;
@@ -13,14 +13,17 @@ pub struct Keyboard {
     dev: DeviceState,
 }
 
-impl Keypad for Keyboard {
-    type Error = crate::hal::Error;
+impl KeypadExt for Keyboard {
+    type Error = ();
 
-    fn key_is_pressed(&self) -> Result<bool, Self::Error> {
+    fn key_is_pressed(&mut self) -> Result<bool, Self::Error> {
         Ok(self.query().is_some())
     }
 
-    fn read_key<D: crate::hal::Delay>(&mut self, delay: &mut D) -> Result<Option<u8>, Self::Error> {
+    fn read_key<D: crate::hal::TimerExt>(
+        &mut self,
+        delay: &mut D,
+    ) -> Result<Option<u8>, Self::Error> {
         delay.delay_us(1000).ok();
         match self.query() {
             Some(Key::Symbol(key)) => Ok(Some(key)),

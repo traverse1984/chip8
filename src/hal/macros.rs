@@ -1,5 +1,4 @@
-/// Define the Chip8 hardware elements, and create a generic
-/// hardware struct and error-type.
+/// Define the Chip8 HAL, Generic structs and Mock structs
 macro_rules! hal {
    (
        $(
@@ -23,7 +22,8 @@ macro_rules! hal {
                 Mock {
                     $(#[$mock_meta: meta])*
                     struct $mock_struct: ident $({
-                        $($mock_arg: ident: $mock_arg_type: ty = $mock_arg_default: expr),+ $(,)?
+                        $($mock_arg: ident: $mock_arg_type: ty
+                            = $mock_arg_default: expr),+ $(,)?
                     })? $(;)?
 
                     $(impl {
@@ -37,6 +37,7 @@ macro_rules! hal {
            }
        )+
    ) => {
+        /// HardwareExt trait docs
         pub trait HardwareExt
         where
             $(Self::$type: $trait<Error = Self::Error>),+
@@ -54,17 +55,20 @@ macro_rules! hal {
             )+
         }
 
+        /// Hardware struct docs
         pub struct Hardware<'a, $($type),+>
         where $($type: $trait),+
         {
             $(pub $prop: &'a mut $type),+
         }
 
+        /// GenericHardwareError docs
         pub enum GenericHardwareError<$($type),+>
         where $($type: $trait),+ {
             $($type($type::Error)),+
         }
 
+        /// GenericHardware docs
         pub struct GenericHardware<$($type),+>
         where $($type: $trait),+
         {
@@ -102,8 +106,8 @@ macro_rules! hal {
             }
         }
 
+        /// MockHardware docs
         #[cfg(test)]
-        /// Mock hardware
         pub struct MockHardware {
             $($prop: $mock_struct),+
         }
@@ -133,8 +137,10 @@ macro_rules! hal {
             }
         }
 
-
+        // For each type of hardware:
         $(
+            // Create the trait
+
             $(#[$hardware_doc])*
             pub trait $trait {
                 type Error;
@@ -145,6 +151,9 @@ macro_rules! hal {
                     ) -> Result<$ret, Self::Error>;
                 )+
             }
+
+
+            // Create the wrapper struct
 
             $(#[$hardware_doc])*
             pub struct $struct<$($bound_type: $bound_trait),+> {
@@ -183,6 +192,8 @@ macro_rules! hal {
             }
 
 
+            // Create the mock struct
+
             #[cfg(test)]
             $(#[$mock_meta])*
             pub struct $mock_struct {
@@ -217,73 +228,4 @@ macro_rules! hal {
    };
 }
 
-// macro_rules! mock_hardware {
-//     (
-//         $(
-//             $(#[$mock_doc: meta])*
-//             impl $prop: ident
-//             $(where $($arg: ident: $arg_type: ty = $default: expr,)* )? {
-//                 type $type: ident;
-//                 trait $trait: ident;
-//                 struct $struct: ident;
-//                 $($impls: item)*
-//             };
-//         )+
-//     ) => {
-//         pub struct MockHardware {
-//             $($prop: $struct),+
-//         }
-
-//         impl core::default::Default for MockHardware {
-//             fn default() -> Self {
-//                 Self { $($prop: $struct::default()),+ }
-//             }
-//         }
-
-//         impl MockHardware {
-//             pub fn new() -> Self {
-//                 Self::default()
-//             }
-//         }
-
-//         impl $crate::hal::HardwareExt for MockHardware {
-//             type Error = ();
-//             $(type $type = $struct;)+
-
-//             fn hardware(&mut self) -> $crate::hal::Hardware<'_, $($struct),+> {
-//                 let MockHardware { $($prop),+ } = self;
-//                 $crate::hal::Hardware { $($prop),+ }
-//             }
-//         }
-
-//         $(
-//             $(#[$mock_doc])*
-//             pub struct $struct {
-//                 $($arg: $arg_type),*
-//             }
-
-//             impl $struct {
-//                 $(
-//                     pub fn $arg(mut self, $arg: $arg_type) -> Self {
-//                         self.$arg = $arg;
-//                         self
-//                     }
-//                 )*
-//             }
-
-//             impl core::default::Default for $struct {
-//                 fn default() -> Self {
-//                     Self { $($arg_type: $default),* }
-//                 }
-//             }
-
-//             impl $trait for $struct {
-//                 type Error = ();
-//                 $($impls)*
-//             }
-//         )+
-//     };
-// }
-
 pub(crate) use hal;
-// pub(crate) use mock_hardware;
