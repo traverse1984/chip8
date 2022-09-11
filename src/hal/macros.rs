@@ -2,35 +2,34 @@
 macro_rules! hal {
    (
        $(
-           $(#[$hardware_doc: meta])*
            impl $prop: ident
            where $($bound_type: ident: $bound_trait: ident),+
            {
                 type $type: ident;
-                trait $trait: ident;
                 struct $struct: ident;
 
-                $(
-                    $(#[$method_meta: meta])*
-                    fn $method: ident $(<
-                        $($gen_type: ident: $gen_bound: ident),+
-                    >)? (
-                        &mut self $(, $($arg: ident: $arg_type: ty),+ )?
-                    ) -> $ret: ty;
-                )+
+                $(#[$hardware_doc: meta])*
+                trait $trait: ident {
+                    $(
+                        $(#[$method_meta: meta])*
+                        fn $method: ident $(<
+                            $($gen_type: ident: $gen_bound: ident),+
+                        >)? (
+                            &mut self $(, $($arg: ident: $arg_type: ty),+ )?
+                        ) -> $ret: ty;
+                    )+
+                }
 
-                Mock {
-                    $(#[$mock_meta: meta])*
-                    struct $mock_struct: ident $({
-                        $($mock_arg: ident: $mock_arg_type: ty
-                            = $mock_arg_default: expr),+ $(,)?
-                    })? $(;)?
+                $(#[$mock_meta: meta])*
+                struct $mock_struct: ident {
+                    $(pub $mock_arg: ident: $mock_arg_type: ty
+                        = $mock_arg_default: expr;)*
 
                     $(impl {
                         $($mock_impl: item)+
                     })?
 
-                    trait {
+                    impl trait {
                         $($mock_trait_impl: item)+
                     }
                 }
@@ -197,13 +196,13 @@ macro_rules! hal {
             #[cfg(test)]
             $(#[$mock_meta])*
             pub struct $mock_struct {
-                $( $(pub $mock_arg: $mock_arg_type),+ )?
+                $(pub $mock_arg: $mock_arg_type),*
             }
 
             #[cfg(test)]
             impl $mock_struct {
-                pub fn new($( $($mock_arg: $mock_arg_type),+ )?) -> Self {
-                    Self { $( $($mock_arg),+ )? }
+                pub fn new($($mock_arg: $mock_arg_type),*) -> Self {
+                    Self { $($mock_arg),* }
                 }
 
                 $($($mock_impl)+)?
@@ -212,9 +211,7 @@ macro_rules! hal {
             #[cfg(test)]
             impl core::default::Default for $mock_struct {
                 fn default() -> Self {
-                    Self {
-                        $( $($mock_arg: $mock_arg_default),+ )?
-                    }
+                    Self { $($mock_arg: $mock_arg_default),* }
                 }
             }
 

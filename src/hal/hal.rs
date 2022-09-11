@@ -7,7 +7,7 @@ use std::vec::Vec;
 use super::macros::hal;
 
 hal! {
-    /// Timer docs
+
     impl timer
     where
         Timer: TimerExt,
@@ -17,22 +17,22 @@ hal! {
         Rng: RngExt
     {
         type Timer;
-        trait TimerExt;
         struct TimerWrapper;
 
-        /// Pause execution for a number of microseconds
-        fn delay_us(&mut self, us: u32) -> ();
+        /// Timer docs
+        trait TimerExt {
+            /// Pause execution for a number of microseconds
+            fn delay_us(&mut self, us: u32) -> ();
 
-        /// Reset the timers 60Hz ticks to 0 and return the number
-        /// that had elapsed.
-        fn reset_ticks(&mut self) -> u8;
+            /// Reset the timers 60Hz ticks to 0 and return the number
+            /// that had elapsed.
+            fn reset_ticks(&mut self) -> u8;
+        }
 
-        Mock {
-            /// MockTimer docs
-            #[derive(Debug, Clone, Copy)]
-            struct MockTimer {
-                ticks: u8 = 0,
-            }
+        /// MockTimer docs
+        #[derive(Debug, Clone, Copy)]
+        struct MockTimer {
+            pub ticks: u8 = 0;
 
             impl {
                 pub fn set_ticks(&mut self, ticks: u8) {
@@ -40,7 +40,7 @@ hal! {
                 }
             }
 
-            trait {
+            impl trait {
                 fn delay_us(&mut self, us: u32) -> Result<(), ()> {
                     Ok(())
                 }
@@ -54,7 +54,6 @@ hal! {
         }
     }
 
-    /// Screen docs
     impl screen
     where
         Timer: TimerExt,
@@ -64,24 +63,24 @@ hal! {
         Rng: RngExt
     {
         type Screen;
-        trait ScreenExt;
         struct ScreenWrapper;
 
-        /// XOR the [&\[u8\]](`u8`) into the current display starting at position
-        /// `(x,y)`, then update the display. Returns a boolean indicating whether
-        /// pixels were erased by this operation.
-        fn draw(&mut self, x: u8, y: u8, data: &[u8]) -> bool;
+        /// Screen docs
+        trait ScreenExt {
+            /// XOR the [&\[u8\]](`u8`) into the current display starting at position
+            /// `(x,y)`, then update the display. Returns a boolean indicating whether
+            /// pixels were erased by this operation.
+            fn draw(&mut self, x: u8, y: u8, data: &[u8]) -> bool;
 
-        /// Clear the entire display
-        fn clear(&mut self) -> ();
+            /// Clear the entire display
+            fn clear(&mut self) -> ();
+        }
 
-        Mock {
-            /// MockScreen docs
-            #[derive(Debug, Clone)]
-            struct MockScreen {
-                collision: bool = false,
-                draws: Vec<MockDraw> = Vec::new(),
-            }
+        /// MockScreen docs
+        #[derive(Debug, Clone)]
+        struct MockScreen {
+            pub collision: bool = false;
+            pub draws: Vec<MockDraw> = Vec::new();
 
             impl {
                 pub fn set_collision(&mut self, collision: bool) {
@@ -89,7 +88,7 @@ hal! {
                 }
             }
 
-            trait {
+            impl trait {
                 fn draw(&mut self, x: u8, y: u8, data: &[u8]) -> Result<bool, ()> {
                     self.draws.push(MockDraw::xor(x, y, data));
                     Ok(self.collision)
@@ -103,7 +102,6 @@ hal! {
         }
     }
 
-    /// Keypad docs
     impl keypad
     where
         Timer: TimerExt,
@@ -113,21 +111,22 @@ hal! {
         Rng: RngExt
     {
         type Keypad;
-        trait KeypadExt;
         struct KeypadWrapper;
 
-        /// Returns true if any key is pressed, false otherwise.
-        fn key_is_pressed(&mut self) -> bool;
 
-        /// Try to determine which key is pressed (if any).
-        fn read_key<Tm: TimerExt>(&mut self, timer: &mut Tm) -> Option<u8>;
+        /// Keypad docs
+        trait KeypadExt {
+            /// Returns true if any key is pressed, false otherwise.
+            fn key_is_pressed(&mut self) -> bool;
 
-        Mock {
-            /// MockKeypad docs
-            #[derive(Debug, Clone)]
-            struct MockKeypad {
-                sequence: Vec<Option<u8>> = Vec::new(),
-            }
+            /// Try to determine which key is pressed (if any).
+            fn read_key<Tm: TimerExt>(&mut self, timer: &mut Tm) -> Option<u8>;
+        }
+
+        /// MockKeypad docs
+        #[derive(Debug, Clone)]
+        struct MockKeypad {
+            pub sequence: Vec<Option<u8>> = Vec::new();
 
             impl {
                 pub fn set_sequence(&mut self, mut sequence: Vec<Option<u8>>) {
@@ -136,7 +135,7 @@ hal! {
                 }
             }
 
-            trait {
+            impl trait {
                 fn key_is_pressed(&mut self) -> Result<bool, ()> {
                     Ok(self.sequence.last().map_or(false, |key| key.is_some()))
                 }
@@ -148,7 +147,6 @@ hal! {
         }
     }
 
-    /// Buzzer docs
     impl buzzer
     where
         Timer: TimerExt,
@@ -158,20 +156,21 @@ hal! {
         Rng: RngExt
     {
         type Buzzer;
-        trait BuzzerExt;
         struct BuzzerWrapper;
 
-        /// Set the state of the buzzer, true being on and false being off.
-        fn set_state(&mut self, state: bool) -> ();
 
-        Mock {
-            /// MockBuzzer docs
-            #[derive(Debug, Clone, Copy)]
-            struct MockBuzzer {
-                state: Option<bool> = None,
-            }
+        /// Buzzer docs
+        trait BuzzerExt {
+            /// Set the state of the buzzer, true being on and false being off.
+            fn set_state(&mut self, state: bool) -> ();
+        }
 
-            trait {
+        /// MockBuzzer docs
+        #[derive(Debug, Clone, Copy)]
+        struct MockBuzzer {
+            pub state: Option<bool> = None;
+
+            impl trait {
                 fn set_state(&mut self, state: bool) -> Result<(), ()> {
                     self.state = Some(state);
                     Ok(())
@@ -181,7 +180,6 @@ hal! {
 
     }
 
-    /// Rng docs
     impl rng
     where
         Timer: TimerExt,
@@ -191,19 +189,19 @@ hal! {
         Rng: RngExt
     {
         type Rng;
-        trait RngExt;
         struct RngWrapper;
 
-        /// Generate a random byte
-        fn rand(&mut self) -> u8;
+        /// Rng docs
+        trait RngExt {
+            /// Generate a random byte
+            fn rand(&mut self) -> u8;
+        }
 
-        Mock {
-            /// MockRng docs
-            #[derive(Debug, Clone)]
-            struct MockRng {
-                sequence: Vec<u8> = Vec::new(),
-                ptr: usize = 0,
-            }
+        /// MockRng docs
+        #[derive(Debug, Clone)]
+        struct MockRng {
+            pub sequence: Vec<u8> = Vec::new();
+            pub ptr: usize = 0;
 
             impl {
                 pub fn set_sequence(&mut self, sequence: Vec<u8>) {
@@ -211,7 +209,7 @@ hal! {
                 }
             }
 
-            trait {
+            impl trait {
                 fn rand(&mut self) -> Result<u8, ()> {
                     if self.sequence.len() > 0 {
                         let rand = self.sequence[self.ptr];
