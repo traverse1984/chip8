@@ -1,8 +1,8 @@
-mod instructions;
+mod arch;
 mod macros;
 mod operands;
 
 pub mod bytecode;
 
-pub use instructions::{ops, Instruction, Opcode};
+pub use arch::{ops, Instruction, Opcode};
 pub use operands::Operands;

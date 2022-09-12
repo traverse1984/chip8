@@ -4,9 +4,9 @@ extern crate std;
 #[cfg(test)]
 use std::vec::Vec;
 
-use super::macros::hal;
+use super::macros::chip8_hal;
 
-hal! {
+chip8_hal! {
 
     impl timer
     where

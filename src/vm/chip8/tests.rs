@@ -25,7 +25,7 @@ macro_rules! chip {
 }
 
 // Create a Chip8 mock with some preset registers
-macro_rules! preset {
+macro_rules! chip_preset {
     ($($reg: literal = $val: literal),+) => {{
         let mut chip = chip!();
         $(chip.mem.reg.set($reg, $val).unwrap();)+
@@ -33,17 +33,21 @@ macro_rules! preset {
     }};
 }
 
-// Read a single register from the Chip8 instance
-macro_rules! reg {
-    ($chip: ident $reg: expr) => {
-        $chip.mem.reg.get($reg).unwrap()
-    };
-}
-
 // Execute an instruction on the Chip8 instance
 macro_rules! exec {
     ($chip: ident $($inst: tt)*) => {
         $chip.exec( $crate::chip8_inst!($($inst)*) ).unwrap()
+    };
+}
+
+// Read or write a single register from the Chip8 instance
+macro_rules! reg {
+    ($chip: ident $reg: expr) => {
+        $chip.mem.reg.get($reg).unwrap()
+    };
+
+    ($chip: ident $reg: literal => $val: expr) => {
+        $chip.mem.reg.set($reg, $val).unwrap();
     };
 }
 
@@ -71,10 +75,6 @@ macro_rules! exec {
 
 #[test]
 fn cls() {
-    let mut p = chip!(hw => {
-        hw.screen().set_collision(true);
-    });
-
     let mut chip = chip!();
 
     exec!(chip cls);
@@ -115,7 +115,7 @@ fn call() {
 
 #[test]
 fn se() {
-    let mut chip = preset!(0 = 0x23);
+    let mut chip = chip_preset!(0 = 0x23);
 
     exec!(chip se 0, 0x23);
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
@@ -127,7 +127,7 @@ fn se() {
 
 #[test]
 fn sne() {
-    let mut chip = preset!(0 = 0x23);
+    let mut chip = chip_preset!(0 = 0x23);
 
     exec!(chip sne 0, 0x23);
     assert_eq!(chip.mem.pc, INST_STEP);
@@ -139,7 +139,7 @@ fn sne() {
 
 #[test]
 fn sev() {
-    let mut chip = preset!(0 = 0x23, 1 = 0x23, 2 = 0x34);
+    let mut chip = chip_preset!(0 = 0x23, 1 = 0x23, 2 = 0x34);
 
     exec!(chip sev 0, 1);
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
@@ -162,7 +162,7 @@ fn ld() {
 
 #[test]
 fn add() {
-    let mut chip = preset!(0 = 10, 1 = 254);
+    let mut chip = chip_preset!(0 = 10, 1 = 254);
 
     exec!(chip add 0, 0x02);
     assert_eq!(reg!(chip 0), 12);
@@ -173,7 +173,7 @@ fn add() {
 
 #[test]
 fn ldv() {
-    let mut chip = preset!(1 = 123);
+    let mut chip = chip_preset!(1 = 123);
 
     exec!(chip ldv 0, 1);
     assert_eq!(reg!(chip 0), 123);
@@ -182,149 +182,152 @@ fn ldv() {
 
 #[test]
 fn or() {
-    let mut chip = preset!(0 = 123, 1 = 45);
+    let mut chip = chip_preset!(0 = 123, 1 = 45);
 
     exec!(chip or 0, 1);
     assert_eq!(reg!(chip 0), 123 | 45);
 }
 
 #[test]
-fn and_x_y() {
-    let mut chip = preset!(0 = 123, 1 = 45);
+fn and() {
+    let mut chip = chip_preset!(0 = 123, 1 = 45);
 
-    chip.exec(0x8012).unwrap();
+    exec!(chip and 0, 1);
     assert_eq!(reg!(chip 0), 123 & 45);
 }
 
 #[test]
-fn xor_x_y() {
-    let mut chip = preset!(0 = 123, 1 = 45);
+fn xor() {
+    let mut chip = chip_preset!(0 = 123, 1 = 45);
 
-    chip.exec(0x8013).unwrap();
+    exec!(chip xor 0, 1);
     assert_eq!(reg!(chip 0), 123 ^ 45);
 }
 
 #[test]
-fn add_x_y() {
-    let mut chip = preset!(0 = 254, 1 = 2, 2 = 3);
+fn addv() {
+    let mut chip = chip_preset!(0 = 254, 1 = 2, 2 = 3);
 
-    chip.exec(0x8014).unwrap();
+    exec!(chip addv 0, 1);
     assert_eq!(reg!(chip 0), 0);
     assert_eq!(reg!(chip REG_FLAG), 1);
 
-    chip.exec(0x8124).unwrap();
+    exec!(chip addv 1, 2);
     assert_eq!(reg!(chip 1), 5);
     assert_eq!(reg!(chip REG_FLAG), 0);
 }
 
 #[test]
-fn sub_x_y() {
-    let mut chip = preset!(0 = 3, 1 = 1, 2 = 2);
+fn sub() {
+    let mut chip = chip_preset!(0 = 3, 1 = 1, 2 = 2);
 
-    chip.exec(0x8015).unwrap();
+    exec!(chip sub 0, 1);
     assert_eq!(reg!(chip 0), 2);
     assert_eq!(reg!(chip REG_FLAG), 1);
 
-    chip.exec(0x8125).unwrap();
+    exec!(chip sub 1, 2);
     assert_eq!(reg!(chip 1), 255);
     assert_eq!(reg!(chip REG_FLAG), 0);
 }
 
 #[test]
-fn shr_x() {
-    let mut chip = preset!(0 = 0b00000101);
+fn shr() {
+    let mut chip = chip_preset!(0 = 0b00000101);
 
-    chip.exec(0x8006).unwrap();
+    exec!(chip shr 0);
     assert_eq!(reg!(chip 0), 0b00000010);
     assert_eq!(reg!(chip REG_FLAG), 1);
 
-    chip.exec(0x8006).unwrap();
+    exec!(chip shr 0);
     assert_eq!(reg!(chip 0), 0b00000001);
     assert_eq!(reg!(chip REG_FLAG), 0);
 }
 
 #[test]
-fn subn_x_y() {
-    let mut chip = preset!(0 = 3, 1 = 1, 2 = 2);
+fn subn() {
+    let mut chip = chip_preset!(0 = 3, 1 = 1, 2 = 2);
 
-    chip.exec(0x8107).unwrap();
+    exec!(chip subn 1, 0);
     assert_eq!(reg!(chip 1), 2);
     assert_eq!(reg!(chip REG_FLAG), 1);
 
-    chip.exec(0x8027).unwrap();
+    exec!(chip subn 0, 2);
     assert_eq!(reg!(chip 0), 255);
     assert_eq!(reg!(chip REG_FLAG), 0);
 }
 
 #[test]
-fn shl_x() {
-    let mut chip = preset!(0 = 0b10100000);
+fn shl() {
+    let mut chip = chip_preset!(0 = 0b10100000);
 
-    chip.exec(0x800E).unwrap();
+    exec!(chip shl 0);
     assert_eq!(reg!(chip 0), 0b01000000);
     assert_eq!(reg!(chip REG_FLAG), 1);
 
-    chip.exec(0x800E).unwrap();
+    exec!(chip shl 0);
     assert_eq!(reg!(chip 0), 0b10000000);
     assert_eq!(reg!(chip REG_FLAG), 0);
 }
 
 #[test]
-fn sne_x_y() {
-    let mut chip = preset!(0 = 1, 1 = 2, 2 = 1);
+fn snev() {
+    let mut chip = chip_preset!(0 = 1, 1 = 2, 2 = 1);
 
-    chip.exec(0x9010).unwrap();
+    exec!(chip snev 0, 1);
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
 
     chip.mem.pc = 0;
-    chip.exec(0x9020).unwrap();
+    exec!(chip snev 0, 2);
     assert_eq!(chip.mem.pc, INST_STEP);
 }
 
 #[test]
-fn ld_i_nnn() {
+fn ldi() {
     let mut chip = chip!();
 
-    chip.exec(0xA123).unwrap();
+    exec!(chip ldi 0x123);
     assert_eq!(chip.mem.i, 0x123);
 }
 
 #[test]
-fn jp0_nnn() {
-    let mut chip = preset!(0 = 3);
+fn jp0() {
+    let mut chip = chip_preset!(0 = 3);
 
-    chip.exec(0xB120).unwrap();
+    exec!(chip jp0 0x120);
     assert_eq!(chip.mem.pc, 0x123);
 }
 
 #[test]
-fn rnd_x_kk() {
+fn rnd() {
     let mut chip = chip!(hw => {
         hw.rng().set_sequence([3, 2, 5].to_vec());
     });
 
-    chip.exec(0xC0FF).unwrap();
+    exec!(chip rnd 0, 0xFF);
     assert_eq!(reg!(chip 0), 3);
 
-    chip.exec(0xC0FF).unwrap();
+    exec!(chip rnd 0, 0xFF);
     assert_eq!(reg!(chip 0), 2);
 
-    chip.exec(0xC004).unwrap();
+    exec!(chip rnd 0, 0x04);
     assert_eq!(reg!(chip 0), 4);
 }
 
 #[test]
-fn drw_x_y_n() {
+fn drw() {
     let mut chip = chip!();
+
     let data = [0x01, 0x02, 0x03, 0x04];
-    let (x, y) = (5, 10);
+    let x = 5;
+    let y = 10;
 
     chip.screen().set_collision(true);
-    chip.mem.reg.set(0, x).unwrap();
-    chip.mem.reg.set(1, y).unwrap();
     chip.mem.ram.load(0x300, &data).unwrap();
     chip.mem.i = 0x300;
-    chip.exec(0xD014).unwrap();
+
+    reg!(chip 0 => x);
+    reg!(chip 1 => y);
+    exec!(chip drw 0, 1, 4);
 
     assert_eq!(reg!(chip REG_FLAG), 1);
     assert_eq!(
@@ -337,24 +340,22 @@ fn drw_x_y_n() {
     );
 
     chip.screen().set_collision(false);
-    chip.exec(0xD014).unwrap();
-
+    exec!(chip drw 0, 1, 4);
     assert_eq!(reg!(chip REG_FLAG), 0);
 }
 
 #[test]
-fn skp_x() {
+fn skp() {
     let mut chip = chip!(hw => {
         hw.keypad().set_sequence([Some(1), Some(2)].to_vec());
     });
 
-    chip.mem.reg.set(0, 1).unwrap();
-    chip.exec(0xE09E).unwrap();
-
+    reg!(chip 0 => 1);
+    exec!(chip skp 0);
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
 
     chip.mem.pc = 0;
-    chip.exec(0xE09E).unwrap();
+    exec!(chip skp 0);
     assert_eq!(chip.mem.pc, INST_STEP);
 }
 
@@ -364,84 +365,83 @@ fn sknp_x() {
         hw.keypad().set_sequence([Some(1), Some(2)].to_vec());
     });
 
-    chip.mem.reg.set(0, 1).unwrap();
-    chip.exec(0xE0A1).unwrap();
-
+    reg!(chip 0 => 1);
+    exec!(chip sknp 0);
     assert_eq!(chip.mem.pc, INST_STEP);
 
     chip.mem.pc = 0;
-    chip.exec(0xE0A1).unwrap();
+    exec!(chip sknp 0);
     assert_eq!(chip.mem.pc, 2 * INST_STEP);
 }
 
 #[test]
-fn ld_x_dt() {
+fn lddtv() {
     let mut chip = chip!();
 
     chip.mem.dt = 123;
-    chip.exec(0xF007).unwrap();
+    exec!(chip lddtv 0);
     assert_eq!(reg!(chip 0), 123);
 }
 
 #[test]
-fn ld_x_key() {
+fn ldkey() {
     let mut chip = chip!(hw => {
         hw.keypad().set_sequence([None, None, Some(1)].to_vec());
     });
 
-    chip.exec(0xF00A).unwrap();
+    exec!(chip ldkey 0);
     assert_eq!(reg!(chip 0), 1);
 }
 
 #[test]
-fn ld_dt_x() {
-    let mut chip = preset!(0 = 123);
+fn lddt() {
+    let mut chip = chip_preset!(0 = 123);
 
-    chip.exec(0xF015).unwrap();
+    exec!(chip lddt 0);
     assert_eq!(chip.mem.dt, 123);
 }
 
 #[test]
-fn ld_st_x() {
-    let mut chip = preset!(0 = 123);
+fn ldst() {
+    let mut chip = chip_preset!(0 = 123);
 
-    chip.exec(0xF018).unwrap();
+    exec!(chip ldst 0);
     assert_eq!(chip.mem.st, 123);
 }
 
 #[test]
-fn add_i_x() {
-    let mut chip = preset!(0 = 0x03);
+fn addi() {
+    let mut chip = chip_preset!(0 = 0x03);
 
     chip.mem.i = 0x120;
-    chip.exec(0xF01E).unwrap();
+    exec!(chip addi 0);
     assert_eq!(chip.mem.i, 0x123);
 }
 
 #[test]
-fn ld_sprite_x() {
-    let mut chip = preset!(0 = 0, 1 = 0xF);
+fn sprite() {
+    let mut chip = chip_preset!(0 = 0, 1 = 0xF);
     let s0 = chip.mem.ram.to_sprite_addr(0).unwrap();
     let sf = chip.mem.ram.to_sprite_addr(0xF).unwrap();
 
-    chip.exec(0xF029).unwrap();
+    exec!(chip sprite 0);
     assert_eq!(chip.mem.i, s0);
 
-    chip.exec(0xF129).unwrap();
+    exec!(chip sprite 1);
     assert_eq!(chip.mem.i, sf);
 }
 
 #[test]
-fn ld_bcd_x() {
-    let mut chip = preset!(0 = 123);
+fn bcd() {
+    let mut chip = chip_preset!(0 = 123);
 
     chip.mem.i = 0x300;
-    chip.exec(0xF033).unwrap();
+    exec!(chip bcd 0);
     assert_eq!(chip.mem.ram.read_bytes(0x300, 3).unwrap(), &[1, 2, 3]);
 }
 
 #[test]
-fn ld_i_x() {
+fn sviv() {
     let mut chip = chip!();
 
     for vx in 0..16 {
@@ -449,14 +449,14 @@ fn ld_i_x() {
     }
 
     chip.mem.i = 0x300;
-    chip.exec(0xFF55).unwrap();
+    exec!(chip sviv 0xF);
     assert_eq!(
         chip.mem.ram.read_bytes(0x300, 16).unwrap(),
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
 
     chip.mem.i = 0x400;
-    chip.exec(0xF755).unwrap();
+    exec!(chip sviv 7);
     assert_eq!(
         chip.mem.ram.read_bytes(0x400, 16).unwrap(),
         [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -464,20 +464,20 @@ fn ld_i_x() {
 }
 
 #[test]
-fn ld_x_i() {
+fn ldiv() {
     let mut chip = chip!();
     let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
     chip.mem.ram.load(0x300, &data).unwrap();
     chip.mem.i = 0x300;
-    chip.exec(0xFF65).unwrap();
+    exec!(chip ldiv 0xF);
 
     for vx in 0..16 {
         assert_eq!(reg!(chip vx), data[vx as usize]);
     }
 
     chip.mem.i = 0x308;
-    chip.exec(0xF765).unwrap();
+    exec!(chip ldiv 7);
 
     for vx in 0..16 {
         assert_eq!(reg!(chip vx), (vx % 8) + 9);

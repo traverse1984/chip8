@@ -1,5 +1,5 @@
 /// Define the Chip8 HAL, Generic structs and Mock structs
-macro_rules! hal {
+macro_rules! chip8_hal {
    (
        $(
            impl $prop: ident
@@ -225,4 +225,4 @@ macro_rules! hal {
    };
 }
 
-pub(crate) use hal;
+pub(super) use chip8_hal;
