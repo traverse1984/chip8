@@ -10,7 +10,7 @@ use chip8::{hal, hal::generic::GenericHardware, *};
 
 use io::debug;
 
-fn main() -> Result<(), chip8::vm::mem::Error> {
+fn main() -> Result<(), CompileError> {
     let mut prog = Program::new();
     let bcd = prog.data(&[0, 0, 0])?;
 
@@ -70,6 +70,6 @@ fn main() -> Result<(), chip8::vm::mem::Error> {
                 RuntimeError::Software(e) => println!("{:?}", e),
             },
         }
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }

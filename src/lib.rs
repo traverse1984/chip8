@@ -12,12 +12,14 @@ pub(crate) mod prelude {
 #[cfg(feature = "std")]
 pub mod io;
 
+mod prog;
+
+pub use prog::*;
+
 pub mod hal;
-mod program;
 
 pub mod inst;
 
 pub mod vm;
 
-pub use program::*;
 pub use vm::Chip8;

@@ -1,95 +1,13 @@
 use crate::chip8_asm;
 extern crate std;
-use super::inst::ops;
-use crate::vm::mem::{Error, Load, Ram, Result};
+use super::error::{CompileError, Result};
+use super::refs::{Ref, Refs};
+use crate::inst::ops;
+use crate::vm::mem::{Error, Load, Ram};
 use std::{dbg, print, println};
 
 pub struct CompiledProgram {
     pub ram: Ram,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Var<'a> {
-    id: u16,
-    addr: u16,
-    data: &'a [u8],
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Ref {
-    addr: u16,
-    len: u16,
-}
-
-impl Ref {
-    fn new(addr: u16, len: u16) -> Self {
-        Self { addr, len }
-    }
-
-    fn is_aligned(&self) -> bool {
-        self.len % 2 == 0
-    }
-
-    fn read_and_update<'a>(&'a mut self, addr: u16, ram: &'a Ram) -> Result<&[u8]> {
-        let bytes = ram.read_bytes(self.addr, self.len);
-        self.addr = addr;
-        bytes
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Refs<const LEN: usize> {
-    index: usize,
-    refs: [Option<Ref>; LEN],
-}
-
-impl<const LEN: usize> Default for Refs<LEN> {
-    fn default() -> Self {
-        Self {
-            index: 0,
-            refs: [None; LEN],
-        }
-    }
-}
-
-impl<const LEN: usize> Refs<LEN> {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn peek_next_id(&self) -> u16 {
-        self.index as u16
-    }
-
-    pub fn create(&mut self, new_ref: Ref) -> Result<u16> {
-        let index = self.index;
-        match self.refs.get_mut(index) {
-            Some(refr) => {
-                refr.replace(new_ref);
-                self.index += 1;
-                Ok(index as u16)
-            }
-            None => Err(Error::StackEmpty),
-        }
-    }
-
-    pub fn copy(&mut self, src: &Ram, dest: &mut Ram, addr: &mut u16) -> Result {
-        for refr in self.refs.iter_mut().flatten() {
-            //print!("  * Ref = ({}, {})", refr.addr, refr.len);
-            let bytes = refr.read_and_update(*addr, src)?;
-            //println!(" len={}", bytes.len());
-            *addr += dest.load(*addr, bytes)?;
-        }
-        Ok(())
-    }
-
-    pub fn get(&self, id: u16) -> Result<u16> {
-        match self.refs.get(id as usize) {
-            Some(Some(refr)) => Ok(refr.addr),
-            Some(None) => Err(Error::StackEmpty),
-            None => Err(Error::StackEmpty),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -102,13 +20,13 @@ pub struct Program {
 }
 
 impl Load<u8> for Program {
-    fn load(&mut self, addr: u16, words: &[u8]) -> Result<u16> {
+    fn load(&mut self, addr: u16, words: &[u8]) -> crate::vm::mem::Result<u16> {
         self.tmp.load(addr, words)
     }
 }
 
 impl Load<u16> for Program {
-    fn load(&mut self, addr: u16, words: &[u16]) -> Result<u16> {
+    fn load(&mut self, addr: u16, words: &[u16]) -> crate::vm::mem::Result<u16> {
         self.tmp.load(addr, words)
     }
 }
@@ -156,7 +74,7 @@ impl Program {
         if refr.is_aligned() {
             Ok(refr)
         } else {
-            Err(Error::StackEmpty)
+            Err(CompileError::Todo)
         }
     }
 
@@ -254,8 +172,6 @@ mod tests {
 
         let sub = program.sub(&sub_inst).unwrap();
         let data = program.data(&[1, 2, 3, 4]).unwrap();
-
-        let prog = [0x1234u16, 0x2345, 0x3456, 0x4567];
 
         let prog = chip8_asm! {
             call sub;
