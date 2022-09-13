@@ -1,5 +1,5 @@
 use super::error::{CompileError, Result};
-use crate::vm::mem::{Load, Ram};
+use crate::mem::{Load, Ram};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ref {

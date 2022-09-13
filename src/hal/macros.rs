@@ -12,11 +12,10 @@ macro_rules! chip8_hal {
                 trait $trait: ident {
                     $(
                         $(#[$method_meta: meta])*
-                        fn $method: ident $(<
-                            $($gen_type: ident: $gen_bound: ident),+
-                        >)? (
-                            &mut self $(, $($arg: ident: $arg_type: ty),+ )?
-                        ) -> $ret: ty;
+                        fn $method: ident
+                            $(<$($gen_type: ident: $gen_bound: ident),+>)?
+                            (&mut self $(, $($arg: ident: $arg_type: ty),+ )?)
+                            -> $ret: ty;
                     )+
                 }
 

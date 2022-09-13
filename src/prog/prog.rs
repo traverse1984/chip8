@@ -3,7 +3,7 @@ extern crate std;
 use super::error::{CompileError, Result};
 use super::refs::{Ref, Refs};
 use crate::inst::ops;
-use crate::vm::mem::{Error, Load, Ram};
+use crate::mem::{Error, Load, Ram};
 use std::{dbg, print, println};
 
 pub struct CompiledProgram {
@@ -20,13 +20,13 @@ pub struct Program {
 }
 
 impl Load<u8> for Program {
-    fn load(&mut self, addr: u16, words: &[u8]) -> crate::vm::mem::Result<u16> {
+    fn load(&mut self, addr: u16, words: &[u8]) -> crate::mem::Result<u16> {
         self.tmp.load(addr, words)
     }
 }
 
 impl Load<u16> for Program {
-    fn load(&mut self, addr: u16, words: &[u16]) -> crate::vm::mem::Result<u16> {
+    fn load(&mut self, addr: u16, words: &[u16]) -> crate::mem::Result<u16> {
         self.tmp.load(addr, words)
     }
 }

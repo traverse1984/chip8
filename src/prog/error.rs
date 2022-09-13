@@ -1,4 +1,4 @@
-use crate::vm::mem;
+use crate::mem;
 
 #[derive(Debug)]
 pub enum CompileError {

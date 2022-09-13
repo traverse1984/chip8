@@ -1,11 +1,11 @@
 use std::thread::Thread;
 
-use chip8;
+use ::chip8;
 use chip8::Chip8;
 
+use chip8::error::{Error, RuntimeError};
 use chip8::hal::*;
 use chip8::io::{HalScreen, Keyboard, NilBuzzer, NilRng, ThreadDelay};
-use chip8::vm::error::{Error, RuntimeError};
 use chip8::{hal, hal::generic::GenericHardware, *};
 
 use io::debug;

@@ -20,6 +20,9 @@ pub mod hal;
 
 pub mod inst;
 
-pub mod vm;
+pub mod chip;
 
-pub use vm::Chip8;
+pub mod mem;
+
+pub use chip::error;
+pub use chip::{Chip8, HwChip8};

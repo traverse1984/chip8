@@ -1,6 +1,6 @@
 use core::convert::Infallible;
 
-use crate::{hal, vm::mem};
+use crate::{hal, mem};
 
 pub type Result<T = ()> = core::result::Result<T, Error>;
 pub type RuntimeResult<E, T = ()> = core::result::Result<T, RuntimeError<E>>;

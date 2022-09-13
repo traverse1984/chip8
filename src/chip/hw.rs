@@ -1,13 +1,15 @@
 use crate::{
     hal::{Hardware, HardwareExt},
-    vm::{error::RuntimeResult, Chip8},
+    mem::Mem,
 };
+
+use super::{error::RuntimeResult, Chip8};
 
 use core::ops::{Deref, DerefMut};
 
 pub struct HwChip8<H: HardwareExt> {
-    chip: Chip8,
     hw: H,
+    chip: Chip8,
 }
 
 impl<H: HardwareExt> HardwareExt for HwChip8<H> {
@@ -26,17 +28,22 @@ impl<H: HardwareExt> HardwareExt for HwChip8<H> {
 }
 
 impl<H: HardwareExt> HwChip8<H> {
-    pub(crate) fn new(hw: H) -> Self {
-        Self::from_chip(Chip8::new(), hw)
+    pub(super) fn new(hw: H) -> Self {
+        Self::from_chip(hw, Chip8::new())
     }
 
-    pub(crate) fn from_chip(chip: Chip8, hw: H) -> Self {
-        Self { chip, hw }
+    pub(super) fn from_chip(hw: H, chip: Chip8) -> Self {
+        Self { hw, chip }
     }
 
-    pub fn split(self) -> (Chip8, H) {
-        let Self { chip, hw } = self;
-        (chip, hw)
+    #[cfg(test)]
+    pub(super) fn mem(&mut self) -> &mut Mem {
+        &mut self.chip.mem
+    }
+
+    pub fn split(self) -> (H, Chip8) {
+        let Self { hw, chip } = self;
+        (hw, chip)
     }
 
     pub fn hw(&mut self) -> &mut H {

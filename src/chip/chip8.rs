@@ -1,26 +1,20 @@
-mod hw;
-mod timer;
+use super::hw::HwChip8;
 
-pub use hw::HwChip8;
+use super::timer::Timer;
 
-use timer::Timer;
-
-use crate::vm::mem::{Load, Mem, Ram, SPRITES};
+use crate::mem::{Load, Mem, Ram, SPRITES};
 
 use super::error::{Error, Result, RuntimeError, RuntimeResult};
 use crate::hal::{BuzzerExt, Hardware, HardwareExt, KeypadExt, RngExt, ScreenExt, TimerExt};
 
 use crate::inst::{bytecode::decode, Opcode};
 
-#[cfg(test)]
-mod tests;
-
-const POLL_FREQ: u32 = 1000;
-const INST_STEP: u16 = 2;
-const REG_FLAG: u8 = 0x0F;
+pub(super) const POLL_FREQ: u32 = 1000;
+pub(super) const INST_STEP: u16 = 2;
+pub(super) const REG_FLAG: u8 = 0x0F;
 
 pub struct Chip8 {
-    mem: Mem,
+    pub mem: Mem,
 }
 
 impl Chip8 {
@@ -93,7 +87,11 @@ impl Chip8 {
         keypad.read_key(timer).map_err(RuntimeError::Hardware)
     }
 
-    fn exec<H: HardwareExt>(&mut self, inst: u16, hw: &mut H) -> RuntimeResult<H::Error> {
+    pub(super) fn exec<H: HardwareExt>(
+        &mut self,
+        inst: u16,
+        hw: &mut H,
+    ) -> RuntimeResult<H::Error> {
         let addr = decode::addr(inst);
         let vx_reg = decode::vx(inst);
         let vy_reg = decode::vy(inst);
@@ -244,14 +242,23 @@ impl Chip8 {
     }
 
     pub fn with_hardware<H: HardwareExt>(self, hw: H) -> HwChip8<H> {
-        HwChip8::from_chip(self, hw)
-    }
-
-    pub fn from_state(mem: Mem) -> Self {
-        Self { mem }
+        HwChip8::from_chip(hw, self)
     }
 
     pub fn state(&self) -> &Mem {
         &self.mem
+    }
+}
+
+impl From<Mem> for Chip8 {
+    fn from(mem: Mem) -> Self {
+        Self { mem }
+    }
+}
+
+impl From<Ram> for Chip8 {
+    fn from(ram: Ram) -> Self {
+        let mem = Mem::from(ram);
+        Self::from(mem)
     }
 }
