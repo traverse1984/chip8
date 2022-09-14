@@ -20,11 +20,11 @@ impl KeypadExt for Keyboard {
         Ok(self.query().is_some())
     }
 
-    fn read_key<D: crate::hal::TimerExt>(
+    fn read_key<D: crate::hal::DelayExt>(
         &mut self,
         delay: &mut D,
     ) -> Result<Option<u8>, Self::Error> {
-        delay.delay_us(1000).ok();
+        delay.delay_micros(1000).ok();
         match self.query() {
             Some(Key::Symbol(key)) => Ok(Some(key)),
             Some(Key::Exit) => std::process::exit(0),

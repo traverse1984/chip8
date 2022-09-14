@@ -5,20 +5,16 @@ mod screen;
 pub use keyboard::*;
 pub use screen::*;
 
-use crate::hal::{BuzzerExt, RngExt, TimerExt};
+use crate::hal::{BuzzerExt, DelayExt, RngExt};
 
 pub struct ThreadDelay;
 
-impl TimerExt for ThreadDelay {
+impl DelayExt for ThreadDelay {
     type Error = ();
 
-    fn delay_us(&mut self, us: u32) -> Result<(), Self::Error> {
+    fn delay_micros(&mut self, us: u32) -> Result<(), Self::Error> {
         std::thread::sleep(std::time::Duration::from_micros(us.into()));
         Ok(())
-    }
-
-    fn reset_ticks(&mut self) -> Result<u8, Self::Error> {
-        Ok(0)
     }
 }
 

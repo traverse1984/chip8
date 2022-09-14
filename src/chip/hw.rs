@@ -14,7 +14,7 @@ pub struct HwChip8<H: HardwareExt> {
 
 impl<H: HardwareExt> HardwareExt for HwChip8<H> {
     type Error = H::Error;
-    type Timer = H::Timer;
+    type Delay = H::Delay;
     type Screen = H::Screen;
     type Keypad = H::Keypad;
     type Buzzer = H::Buzzer;
@@ -22,7 +22,7 @@ impl<H: HardwareExt> HardwareExt for HwChip8<H> {
 
     fn hardware(
         &mut self,
-    ) -> Hardware<'_, Self::Timer, Self::Screen, Self::Keypad, Self::Buzzer, Self::Rng> {
+    ) -> Hardware<'_, Self::Delay, Self::Screen, Self::Keypad, Self::Buzzer, Self::Rng> {
         self.hw.hardware()
     }
 }
@@ -50,9 +50,13 @@ impl<H: HardwareExt> HwChip8<H> {
         &mut self.hw
     }
 
-    pub fn run(&mut self, hz: u32) -> RuntimeResult<H::Error> {
+    pub fn run(
+        &mut self,
+        speed_hz: u32,
+        before_tick: fn(&mut Chip8, &mut H),
+    ) -> RuntimeResult<H::Error> {
         let Self { chip, hw } = self;
-        chip.run(hz, hw)
+        chip.run(hw, speed_hz, before_tick)
     }
 
     pub fn step(&mut self) -> RuntimeResult<H::Error> {

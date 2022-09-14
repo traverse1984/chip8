@@ -1,11 +1,12 @@
 use super::hw::HwChip8;
 
+use super::clock::Clock;
 use super::timer::Timer;
 
 use crate::mem::{Load, Mem, Ram, SPRITES};
 
 use super::error::{Error, Result, RuntimeError, RuntimeResult};
-use crate::hal::{BuzzerExt, Hardware, HardwareExt, KeypadExt, RngExt, ScreenExt, TimerExt};
+use crate::hal::{BuzzerExt, DelayExt, Hardware, HardwareExt, KeypadExt, RngExt, ScreenExt};
 
 use crate::inst::{bytecode::decode, Opcode};
 
@@ -14,7 +15,8 @@ pub(super) const INST_STEP: u16 = 2;
 pub(super) const REG_FLAG: u8 = 0x0F;
 
 pub struct Chip8 {
-    pub mem: Mem,
+    pub(super) mem: Mem,
+    pub(super) delay_multiplier: u32,
 }
 
 impl Chip8 {
@@ -46,27 +48,39 @@ impl Chip8 {
         self.exec(inst, hw)
     }
 
-    pub fn run<H: HardwareExt>(&mut self, hz: u32, hw: &mut H) -> RuntimeResult<H::Error> {
-        let tick = if hz >= 60 {
-            Timer::hertz_to_us(hz).ok_or(Error::ClockSpeed(hz))
-        } else {
-            Err(Error::ClockSpeed(hz))
-        }?;
+    // Be good to add a clock multiplier or something, so that
+    // runing at 1s speed is still viable with some sense that the
+    // timers still decrease correctly.
+    // Should clock be part of the chip8 struct, perhaps?
 
-        let mut dt = Timer::new(60).unwrap();
-        let mut st = Timer::new(60).unwrap();
+    pub fn run<H: HardwareExt>(
+        &mut self,
+        hw: &mut H,
+        speed_hz: u32,
+        before_tick: fn(&mut Chip8, &mut H),
+    ) -> RuntimeResult<H::Error> {
+        let mut clock = Clock::new(speed_hz)?;
 
         loop {
-            if dt.update(self.mem.dt > 0, tick) {
-                self.mem.dt -= 1;
-            }
-
-            if st.update(self.mem.st > 0, tick) {
-                self.mem.st -= 1;
-            }
+            before_tick(self, hw);
 
             self.step(hw)?;
-            hw.timer().delay_us(tick).map_err(RuntimeError::Hardware)?;
+
+            let delay = clock.delay() * self.delay_multiplier;
+            let macro_tick = clock.tick();
+
+            hw.delay()
+                .delay_micros(delay)
+                .map_err(RuntimeError::Hardware)?;
+
+            if macro_tick {
+                self.mem.dt = self.mem.dt.saturating_sub(1);
+                self.mem.st = self.mem.st.saturating_sub(1);
+
+                hw.buzzer()
+                    .set_state(self.mem.st > 0)
+                    .map_err(RuntimeError::Hardware)?;
+            }
         }
     }
 
@@ -82,9 +96,9 @@ impl Chip8 {
     }
 
     fn read_key<H: HardwareExt>(hw: &mut H) -> RuntimeResult<H::Error, Option<u8>> {
-        let Hardware { keypad, timer, .. } = hw.hardware();
+        let Hardware { keypad, delay, .. } = hw.hardware();
 
-        keypad.read_key(timer).map_err(RuntimeError::Hardware)
+        keypad.read_key(delay).map_err(RuntimeError::Hardware)
     }
 
     pub(super) fn exec<H: HardwareExt>(
@@ -196,8 +210,8 @@ impl Chip8 {
                         break key;
                     }
 
-                    hw.timer()
-                        .delay_us(POLL_FREQ)
+                    hw.delay()
+                        .delay_micros(POLL_FREQ)
                         .map_err(RuntimeError::Hardware)?;
                 };
 
@@ -238,7 +252,12 @@ impl Chip8 {
     pub fn new() -> Self {
         Self {
             mem: Mem::default(),
+            delay_multiplier: 1,
         }
+    }
+
+    pub fn set_delay_multiplier(&mut self, multiplier: u32) {
+        self.delay_multiplier = multiplier;
     }
 
     pub fn with_hardware<H: HardwareExt>(self, hw: H) -> HwChip8<H> {
@@ -252,7 +271,10 @@ impl Chip8 {
 
 impl From<Mem> for Chip8 {
     fn from(mem: Mem) -> Self {
-        Self { mem }
+        Self {
+            mem,
+            delay_multiplier: 1,
+        }
     }
 }
 

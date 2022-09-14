@@ -42,6 +42,8 @@ fn main() -> Result<(), CompileError> {
         ld 5, 8; // x1
         ld 6, 14; // x2
         ld 8, 1; // Counter
+        ld 0xA, 10;
+        lddt 10;
         call update;
         call looper;
     })?;
@@ -58,18 +60,21 @@ fn main() -> Result<(), CompileError> {
         NilRng,
     ));
 
-    loop {
-        debug::draw_frame(chip.screen());
-        debug::draw_registers(*chip.state(), chip.screen());
-        chip.screen().flush();
+    chip.set_delay_multiplier(20);
 
-        match chip.step() {
-            Ok(_) => {}
-            Err(e) => match e {
-                RuntimeError::Hardware(e) => println!("Hardware error"),
-                RuntimeError::Software(e) => println!("{:?}", e),
-            },
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    let result = chip.run(240, |chip, hw| {
+        debug::draw_frame(hw.screen());
+        debug::draw_registers(*chip.state(), hw.screen());
+        hw.screen().flush();
+    });
+
+    match result {
+        Ok(_) => {}
+        Err(e) => match e {
+            RuntimeError::Hardware(e) => println!("Hardware error"),
+            RuntimeError::Software(e) => println!("{:?}", e),
+        },
+    };
+
+    Ok(())
 }

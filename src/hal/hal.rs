@@ -8,47 +8,29 @@ use super::macros::chip8_hal;
 
 chip8_hal! {
 
-    impl timer
+    impl delay
     where
-        Timer: TimerExt,
+        Delay: DelayExt,
         Screen: ScreenExt,
         Keypad: KeypadExt,
         Buzzer: BuzzerExt,
         Rng: RngExt
     {
-        type Timer;
-        struct TimerWrapper;
+        type Delay;
+        struct DelayWrapper;
 
-        /// Timer docs
-        trait TimerExt {
+        /// Delay docs
+        trait DelayExt {
             /// Pause execution for a number of microseconds
-            fn delay_us(&mut self, us: u32) -> ();
-
-            /// Reset the timers 60Hz ticks to 0 and return the number
-            /// that had elapsed.
-            fn reset_ticks(&mut self) -> u8;
+            fn delay_micros(&mut self, us: u32) -> ();
         }
 
-        /// MockTimer docs
+        /// MockDelay docs
         #[derive(Debug, Clone, Copy)]
-        struct MockTimer {
-            pub ticks: u8 = 0;
-
-            impl {
-                pub fn set_ticks(&mut self, ticks: u8) {
-                    self.ticks = ticks;
-                }
-            }
-
+        struct MockDelay {
             impl trait {
-                fn delay_us(&mut self, us: u32) -> Result<(), ()> {
+                fn delay_micros(&mut self, us: u32) -> Result<(), ()> {
                     Ok(())
-                }
-
-                fn reset_ticks(&mut self) -> Result<u8, ()> {
-                    let ticks = self.ticks;
-                    self.ticks = 0;
-                    Ok(ticks)
                 }
             }
         }
@@ -56,7 +38,7 @@ chip8_hal! {
 
     impl screen
     where
-        Timer: TimerExt,
+        Delay: DelayExt,
         Screen: ScreenExt,
         Keypad: KeypadExt,
         Buzzer: BuzzerExt,
@@ -104,7 +86,7 @@ chip8_hal! {
 
     impl keypad
     where
-        Timer: TimerExt,
+        Delay: DelayExt,
         Screen: ScreenExt,
         Keypad: KeypadExt,
         Buzzer: BuzzerExt,
@@ -120,7 +102,7 @@ chip8_hal! {
             fn key_is_pressed(&mut self) -> bool;
 
             /// Try to determine which key is pressed (if any).
-            fn read_key<Tm: TimerExt>(&mut self, timer: &mut Tm) -> Option<u8>;
+            fn read_key<D: DelayExt>(&mut self, Delay: &mut D) -> Option<u8>;
         }
 
         /// MockKeypad docs
@@ -140,7 +122,7 @@ chip8_hal! {
                     Ok(self.sequence.last().map_or(false, |key| key.is_some()))
                 }
 
-                fn read_key<Tm: TimerExt>(&mut self, timer: &mut Tm) -> Result<Option<u8>, ()> {
+                fn read_key<Tm: DelayExt>(&mut self, Delay: &mut Tm) -> Result<Option<u8>, ()> {
                     Ok(self.sequence.pop().map_or(None, |key| key))
                 }
             }
@@ -149,7 +131,7 @@ chip8_hal! {
 
     impl buzzer
     where
-        Timer: TimerExt,
+        Delay: DelayExt,
         Screen: ScreenExt,
         Keypad: KeypadExt,
         Buzzer: BuzzerExt,
@@ -182,7 +164,7 @@ chip8_hal! {
 
     impl rng
     where
-        Timer: TimerExt,
+        Delay: DelayExt,
         Screen: ScreenExt,
         Keypad: KeypadExt,
         Buzzer: BuzzerExt,
@@ -272,7 +254,7 @@ mod tests {
     #[test]
     fn keypad() {
         let mut keypad = MockKeypad::default();
-        let mut delay = MockTimer::default();
+        let mut delay = MockDelay::default();
 
         assert_eq!(keypad.key_is_pressed().unwrap(), false);
         assert_eq!(keypad.read_key(&mut delay).unwrap(), None);
