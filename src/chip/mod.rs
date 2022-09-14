@@ -2,7 +2,6 @@ pub(crate) mod chip8;
 mod clock;
 pub mod error;
 mod hw;
-mod timer;
 
 #[cfg(test)]
 mod tests;

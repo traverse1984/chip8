@@ -132,6 +132,8 @@ impl Program {
         //println!("Add vars at {addr}");
         self.vars.copy(&self.tmp, &mut ram, &mut addr)?;
 
+        // @todo Improve this implementation so it doesn't use
+        // magic numbers.
         for addr in (0x200..last_inst).filter(|idx| idx % 2 == 0) {
             match ram.read_bytes(addr, 2)? {
                 &[inst @ (0x10 | 0x20 | 0xA0 | 0xB0), id]

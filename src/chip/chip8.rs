@@ -1,7 +1,6 @@
 use super::hw::HwChip8;
 
 use super::clock::Clock;
-use super::timer::Timer;
 
 use crate::mem::{Load, Mem, Ram, SPRITES};
 
@@ -20,19 +19,6 @@ pub struct Chip8 {
 }
 
 impl Chip8 {
-    // pub fn main<'a, P: Into<Program<'a>>>(&mut self, program: P) -> Result<u16> {
-    //     self.sub(0x200, program)
-    // }
-
-    // pub fn sub<'a, P: Into<Program<'a>>>(&mut self, addr: u16, program: P) -> Result<u16> {
-    //     self.data(addr, program.into().bytes())
-    // }
-
-    // pub fn data(&mut self, addr: u16, data: &[u8]) -> Result<u16> {
-    //     self.mem.ram.load(addr, data)?;
-    //     Ok(addr)
-    // }
-
     pub fn load(mut self, ram: Ram) -> Self {
         self.mem = Mem::from(ram);
         self.init();
