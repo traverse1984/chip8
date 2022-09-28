@@ -119,6 +119,7 @@ fn call() {
 fn se() {
     let mut chip = chip_preset!(0 = 0x23);
 
+    chip.mem().pc = 0;
     exec!(chip se 0, 0x23);
     assert_eq!(chip.mem().pc, 2 * INST_STEP);
 
@@ -131,6 +132,7 @@ fn se() {
 fn sne() {
     let mut chip = chip_preset!(0 = 0x23);
 
+    chip.mem().pc = 0;
     exec!(chip sne 0, 0x23);
     assert_eq!(chip.mem().pc, INST_STEP);
 
@@ -143,6 +145,7 @@ fn sne() {
 fn sev() {
     let mut chip = chip_preset!(0 = 0x23, 1 = 0x23, 2 = 0x34);
 
+    chip.mem().pc = 0;
     exec!(chip sev 0, 1);
     assert_eq!(chip.mem().pc, 2 * INST_STEP);
 
@@ -275,6 +278,7 @@ fn shl() {
 fn snev() {
     let mut chip = chip_preset!(0 = 1, 1 = 2, 2 = 1);
 
+    chip.mem().pc = 0;
     exec!(chip snev 0, 1);
     assert_eq!(chip.mem().pc, 2 * INST_STEP);
 
@@ -352,6 +356,7 @@ fn skp() {
         hw.keypad().set_sequence([Some(1), Some(2)].to_vec());
     });
 
+    chip.mem().pc = 0;
     reg!(chip 0 => 1);
     exec!(chip skp 0);
     assert_eq!(chip.mem().pc, 2 * INST_STEP);
@@ -367,6 +372,7 @@ fn sknp_x() {
         hw.keypad().set_sequence([Some(1), Some(2)].to_vec());
     });
 
+    chip.mem().pc = 0;
     reg!(chip 0 => 1);
     exec!(chip sknp 0);
     assert_eq!(chip.mem().pc, INST_STEP);

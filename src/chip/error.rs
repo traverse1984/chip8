@@ -14,10 +14,17 @@ pub enum RuntimeError<E> {
 /// Chip8 Software errors
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
+    /// An error relating to the memory module
     Memory(mem::Error),
-    NotAligned(u16),
-    Instruction(u16),
-    ClockSpeed(u32),
+
+    /// The address was not aligned to the start of an instruction
+    OffsetNotAligned(u16),
+
+    /// The instruction is not known
+    UnknownInstruction(u16),
+
+    /// The requested clock speed can't be emulated
+    InvalidClockSpeed(u32),
 }
 
 impl From<mem::Error> for Error {

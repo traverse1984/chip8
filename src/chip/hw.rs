@@ -1,5 +1,5 @@
 use crate::{
-    hal::{Hardware, HardwareExt},
+    hal::{generic::GenericHardware, Hardware, HardwareExt},
     mem::Mem,
 };
 
@@ -50,11 +50,10 @@ impl<H: HardwareExt> HwChip8<H> {
         &mut self.hw
     }
 
-    pub fn run(
-        &mut self,
-        speed_hz: u32,
-        before_tick: fn(&mut Chip8, &mut H),
-    ) -> RuntimeResult<H::Error> {
+    pub fn run<F>(&mut self, speed_hz: u32, before_tick: F) -> RuntimeResult<H::Error>
+    where
+        F: FnMut(&mut Chip8, &mut H),
+    {
         let Self { chip, hw } = self;
         chip.run(hw, speed_hz, before_tick)
     }

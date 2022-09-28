@@ -13,38 +13,52 @@ pub(super) const POLL_FREQ: u32 = 1000;
 pub(super) const INST_STEP: u16 = 2;
 pub(super) const REG_FLAG: u8 = 0x0F;
 
+#[derive(Debug, Clone, Copy)]
 pub struct Chip8 {
     pub(super) mem: Mem,
-    pub(super) delay_multiplier: u32,
+    pub(super) clock_division: u32,
 }
 
 impl Chip8 {
-    pub fn load(mut self, ram: Ram) -> Self {
-        self.mem = Mem::from(ram);
-        self.init();
-        self
+    /// Create a new chip8 instance with empty RAM
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn init(&mut self) {
-        self.mem.pc = 0x200;
+    /// Attach hardware to the chip, simplifying some calls.
+    pub fn with_hardware<H: HardwareExt>(self, hw: H) -> HwChip8<H> {
+        HwChip8::from_chip(hw, self)
     }
 
+    /// Set a clock division for the run method. Defaults to 1 (do not divide).
+    /// This can be used to slow down actual execution speed.
+    pub fn set_clock_division(&mut self, multiplier: u32) {
+        self.clock_division = multiplier;
+    }
+
+    /// The current mem (stack, ram, registers) state.
+    pub fn state(&self) -> &Mem {
+        &self.mem
+    }
+
+    /// Read the next instruction and execute it with provided hardware
     pub fn step<H: HardwareExt>(&mut self, hw: &mut H) -> RuntimeResult<H::Error> {
         let inst = self.read_inst(self.mem.pc)?;
         self.exec(inst, hw)
     }
 
-    // Be good to add a clock multiplier or something, so that
-    // runing at 1s speed is still viable with some sense that the
-    // timers still decrease correctly.
-    // Should clock be part of the chip8 struct, perhaps?
-
-    pub fn run<H: HardwareExt>(
+    /// Run the chip8 emulator from it's current state. The before_tick
+    /// closure is executed prior to each clock "tick"
+    pub fn run<H, F>(
         &mut self,
         hw: &mut H,
         speed_hz: u32,
-        before_tick: fn(&mut Chip8, &mut H),
-    ) -> RuntimeResult<H::Error> {
+        mut before_tick: F,
+    ) -> RuntimeResult<H::Error>
+    where
+        H: HardwareExt,
+        F: FnMut(&mut Chip8, &mut H),
+    {
         let mut clock = Clock::new(speed_hz)?;
 
         loop {
@@ -52,7 +66,7 @@ impl Chip8 {
 
             self.step(hw)?;
 
-            let delay = clock.delay() * self.delay_multiplier;
+            let delay = clock.delay() * self.clock_division;
             let macro_tick = clock.tick();
 
             hw.delay()
@@ -70,6 +84,7 @@ impl Chip8 {
         }
     }
 
+    /// Try and read the next instruction from memory
     fn read_inst(&mut self, addr: u16) -> Result<u16> {
         if self.mem.ram.to_read_addr(addr)? % INST_STEP == 0 {
             Ok(u16::from_be_bytes([
@@ -77,25 +92,27 @@ impl Chip8 {
                 self.mem.ram.read_byte(addr + 1)?,
             ]))
         } else {
-            Err(Error::NotAligned(addr))
+            Err(Error::OffsetNotAligned(addr))
         }
     }
 
+    /// Helper method for reading a key press.
     fn read_key<H: HardwareExt>(hw: &mut H) -> RuntimeResult<H::Error, Option<u8>> {
         let Hardware { keypad, delay, .. } = hw.hardware();
 
         keypad.read_key(delay).map_err(RuntimeError::Hardware)
     }
 
+    /// Execute an instruction with provided hardware and update state.
     pub(super) fn exec<H: HardwareExt>(
         &mut self,
         inst: u16,
         hw: &mut H,
     ) -> RuntimeResult<H::Error> {
         let addr = decode::addr(inst);
+        let byte = decode::byte(inst);
         let vx_reg = decode::vx(inst);
         let vy_reg = decode::vy(inst);
-        let byte = decode::byte(inst);
 
         let Mem {
             i,
@@ -110,14 +127,17 @@ impl Chip8 {
         let vx = reg.get(vx_reg)?;
         let vy = reg.get(vy_reg)?;
 
-        /// Set or increment the program counter
+        /// Set the program counter based on the provided expression, and then
+        /// return from this function.
         macro_rules! jump {
-            ($($code: tt)*) => {{
-                *pc = $($code)*;
+            ($($val: tt)+) => {{
+                *pc = $($val)+;
                 return Ok(());
             }};
         }
 
+        /// If the condition is true, increment the program counter to the next
+        /// instruction address.
         macro_rules! skip {
             ($($cond: tt)+) => {
                 if $($cond)+ {
@@ -140,10 +160,11 @@ impl Chip8 {
 
         let opcode = match Opcode::decode(inst) {
             Some(opcode) => opcode,
-            None => return Err(Error::Instruction(inst))?,
+            None => return Err(Error::UnknownInstruction(inst))?,
         };
 
         use Opcode::*;
+
         match opcode {
             Cls => hw.screen().clear().map_err(RuntimeError::Hardware)?,
             Ret => jump!(stack.pop()? + 2),
@@ -234,24 +255,12 @@ impl Chip8 {
     }
 }
 
-impl Chip8 {
-    pub fn new() -> Self {
+impl Default for Chip8 {
+    fn default() -> Self {
         Self {
             mem: Mem::default(),
-            delay_multiplier: 1,
+            clock_division: 1,
         }
-    }
-
-    pub fn set_delay_multiplier(&mut self, multiplier: u32) {
-        self.delay_multiplier = multiplier;
-    }
-
-    pub fn with_hardware<H: HardwareExt>(self, hw: H) -> HwChip8<H> {
-        HwChip8::from_chip(hw, self)
-    }
-
-    pub fn state(&self) -> &Mem {
-        &self.mem
     }
 }
 
@@ -259,7 +268,7 @@ impl From<Mem> for Chip8 {
     fn from(mem: Mem) -> Self {
         Self {
             mem,
-            delay_multiplier: 1,
+            ..Default::default()
         }
     }
 }

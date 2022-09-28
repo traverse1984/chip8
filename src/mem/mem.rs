@@ -16,7 +16,7 @@ pub enum Error {
     StackEmpty,
 }
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone)]
 pub struct Mem {
     pub i: u16,
     // Counter
@@ -32,6 +32,20 @@ pub struct Mem {
     // Usually mem addr
     pub ram: Ram,
     // Stack
+}
+
+impl Default for Mem {
+    fn default() -> Self {
+        Self {
+            i: 0,
+            pc: 0x200,
+            dt: 0,
+            st: 0,
+            reg: Registers::default(),
+            stack: Stack::default(),
+            ram: Ram::default(),
+        }
+    }
 }
 
 impl From<Ram> for Mem {

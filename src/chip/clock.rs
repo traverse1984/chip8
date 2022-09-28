@@ -22,7 +22,7 @@ impl Clock {
                 acc: 0,
             })
         } else {
-            Err(Error::ClockSpeed(hertz))
+            Err(Error::InvalidClockSpeed(hertz))
         }
     }
 
@@ -49,10 +49,10 @@ mod tests {
 
     #[test]
     fn clock() {
-        assert_eq!(Clock::new(59).unwrap_err(), Error::ClockSpeed(59));
+        assert_eq!(Clock::new(59).unwrap_err(), Error::InvalidClockSpeed(59));
         assert_eq!(
             Clock::new(1_000_001).unwrap_err(),
-            Error::ClockSpeed(1_000_001)
+            Error::InvalidClockSpeed(1_000_001)
         );
 
         let mut clock = Clock::new(120).unwrap();

@@ -51,7 +51,7 @@ fn main() -> Result<(), CompileError> {
     let prog = prog.compile()?;
     hexdump(prog.ram.read_bytes(0x200, 96)?);
 
-    let chip = Chip8::new().load(prog.ram);
+    let chip = Chip8::from(prog.ram);
     let mut chip = chip.with_hardware(GenericHardware::new(
         ThreadDelay,
         HalScreen::new().unwrap(),
@@ -60,7 +60,7 @@ fn main() -> Result<(), CompileError> {
         NilRng,
     ));
 
-    chip.set_delay_multiplier(20);
+    chip.set_clock_division(2);
 
     let result = chip.run(240, |chip, hw| {
         debug::draw_frame(hw.screen());
